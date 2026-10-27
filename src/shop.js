@@ -10,7 +10,8 @@
 //
 // Elements the Teacher may point at carry data-guide="…" attributes.
 
-import { STORES, AISLES, PRODUCTS, product, store, carries, offer, storeProducts, matches } from './catalog.js';
+import { STORES, AISLES, BAKERY_SUBS, PRODUCTS, product, store, carries, offer, storeProducts, matches, hasNuts, isCake, glutenFree, allergenText } from './catalog.js';
+import { checkCard, formatCardNumber } from './payment.js';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const money = (n) => `$${n.toFixed(2)}`;
@@ -53,7 +54,12 @@ export function createShop(root, { onChange = () => {} } = {}) {
     productId: null, size: null, message: '', qty: 1, sizeError: false, justAdded: false,
     cartOpen: false, cart: [], day: null, slot: null, addressFilled: false, gift: false, tip: 15,
     placeError: '', orderNo: null, lastOrder: null, menuOpen: false,
+    filters: { nutFree: false, glutenFree: false, under20: false }, bakerySub: null,
+    opened: {}, addrOpen: false, pricingOpen: false, cardValid: false, cardErrors: {},
   });
+  // Kept across resets of a single order: favorites and past orders.
+  const favs = new Set();
+  const orders = [];
   let st = fresh();
 
   // ── State the Teacher sees ──
@@ -69,8 +75,14 @@ export function createShop(root, { onChange = () => {} } = {}) {
       view: view(), page: st.page, storeId: st.storeId, aisleId: st.aisleId, query: st.query,
       productId: st.productId, size: st.size, messageFilled: !!st.message.trim(),
       cartOpen: st.cartOpen, cartCount: cartCount(), cartHasMessage: st.cart.some((l) => !!l.message),
-      cartHasCake: st.cart.some((l) => l.id === 'choc-mousse-cake'),
+      cartHasCake: st.cart.some((l) => isCake(product(l.id))),
+      cartHasNutCake: st.cart.some((l) => isCake(product(l.id)) && hasNuts(product(l.id))),
+      filters: { ...st.filters }, bakerySub: st.bakerySub,
+      productIsCake: isCake(product(st.productId)), productHasNuts: st.productId ? hasNuts(product(st.productId)) : null,
+      detailsOpened: !!st.opened.details, ingredientsOpened: !!st.opened.ingredients,
+      allergensOpened: !!st.opened.allergens, reviewsOpened: !!st.opened.reviews,
       deliveryDay: st.slot ? `${st.day} ${st.slot}` : null, addressFilled: st.addressFilled,
+      cardValid: st.cardValid, orders: orders.length, favorites: favs.size,
       days: days().map((d) => d.id),
     };
   }
@@ -98,7 +110,7 @@ export function createShop(root, { onChange = () => {} } = {}) {
         <button class="icon-btn" data-act="menu" aria-label="Menu" aria-expanded="${st.menuOpen}">☰</button>
         <button class="bk-logo" data-act="home" data-guide="logo" aria-label="Basketly home">${logoSvg()}<span>basketly</span></button>
         <div class="seg" role="group" aria-label="Order type"><button class="on" aria-pressed="true">Delivery</button><button aria-pressed="false" data-act="pickup">Pickup</button></div>
-        <button class="addr" data-act="address" aria-label="Delivery address: ${DEMO_ADDRESS}">📍 <span>${DEMO_ADDRESS}</span> ▾</button>
+        <button class="addr" data-act="address" aria-expanded="${st.addrOpen}" aria-label="Delivery address: ${DEMO_ADDRESS}">📍 <span>${DEMO_ADDRESS}</span> ▾</button>
         <form class="bk-search" role="search" data-guide="search">
           <span aria-hidden="true">⌕</span>
           <label class="sr-only" for="bk-q">${inStore ? `Search ${esc(s.name)}` : 'Search products and stores'}</label>
@@ -106,16 +118,18 @@ export function createShop(root, { onChange = () => {} } = {}) {
         </form>
         <button class="bk-cart ${n ? 'has' : ''}" data-act="cart" data-guide="cart" aria-label="Cart, ${n} item${n === 1 ? '' : 's'}">🛒 <span class="n">${n}</span></button>
       </header>
-      ${st.menuOpen ? `<nav class="bk-menu" aria-label="Account"><div class="who">Hi, Guest</div>${['Your orders', 'Your lists', 'Credits & promos', 'Basketly+ membership', 'Help center', 'Account settings'].map((x) => `<button data-act="menu-item">${x}</button>`).join('')}</nav>` : ''}
-      <div class="bk-demo" role="note">Basketly is a demo shop for a research study. Stores are fictional; nothing is bought and no payment is taken.</div>`;
+      ${st.menuOpen ? `<nav class="bk-menu" aria-label="Account"><div class="who">Hi, Guest</div>${[['orders', 'Your orders'], ['lists', 'Your lists'], ['', 'Credits & promos'], ['', 'Basketly+ membership'], ['help', 'Help center'], ['', 'Account settings']].map(([pg, x]) => `<button data-act="${pg ? 'page' : 'menu-item'}" data-page="${pg}">${x}</button>`).join('')}</nav>` : ''}
+      ${st.addrOpen ? `<div class="bk-pop addr-pop" role="dialog" aria-label="Delivery address"><strong>Delivering to</strong><p>${DEMO_ADDRESS}</p><p class="muted small">In this demo, you type the full street address at checkout.</p><button class="secondary" data-act="address">Done</button></div>` : ''}
+      <div class="bk-demo" role="note">Basketly is a demo shop for a research study. Stores are fictional; nothing is bought. Use only the printed test card, never a real one.</div>`;
   }
 
   function renderMain() {
-    const fn = { home, store: storePage, aisle: aislePage, search: searchPage, checkout, confirmation, buyagain: buyAgain, deals }[st.page] || home;
+    const fn = { home, store: storePage, aisle: aislePage, search: searchPage, checkout, confirmation, buyagain: buyAgain, deals, orders: ordersPage, lists: listsPage, help: helpPage }[st.page] || home;
     $main.innerHTML = fn();
   }
 
   function renderModal() {
+    if (st.pricingOpen && !st.productId) { $modal.innerHTML = pricingModal(); return; }
     if (!st.productId) { $modal.innerHTML = ''; return; }
     $modal.innerHTML = productModal();
     const msg = $modal.querySelector('#bk-msg');
@@ -127,7 +141,7 @@ export function createShop(root, { onChange = () => {} } = {}) {
   function renderAll() { renderHeader(); renderMain(); renderModal(); renderDrawer(); scroller.classList.toggle('bk-locked', !!(st.productId || st.cartOpen)); }
 
   function go(page, extra = {}) {
-    Object.assign(st, extra, { page, menuOpen: false });
+    Object.assign(st, extra, { page, menuOpen: false, addrOpen: false });
     renderAll();
     scroller.scrollTop = 0;
     $main.focus({ preventScroll: true });
@@ -165,7 +179,7 @@ export function createShop(root, { onChange = () => {} } = {}) {
 
   function sidebar(s) {
     const aisles = AISLES.filter((a) => storeProducts(s).some((p) => p.aisle === a.id));
-    const nav = [['store', 'Storefront', '🏠'], ['buyagain', 'Buy it again', '↻'], ['deals', 'Deals', '🏷']];
+    const nav = [['store', 'Storefront', '🏠'], ['buyagain', 'Buy it again', '↻'], ['deals', 'Deals', '🏷'], ['lists', 'Your lists', '♡'], ['orders', 'Your orders', '🧾']];
     return `
       <aside class="store-side">
         <div class="ss-head">${storeLogo(s, 72)}<div class="ss-name">${esc(s.name)}</div><div class="ss-eta">${esc(s.eta)}</div>
@@ -203,11 +217,15 @@ export function createShop(root, { onChange = () => {} } = {}) {
   function aislePage() {
     const s = store(st.storeId);
     if (!s) return home();
-    const list = sortList(storeProducts(s).filter((p) => p.aisle === st.aisleId), s);
+    const inAisle = storeProducts(s).filter((p) => p.aisle === st.aisleId);
+    const subs = st.aisleId === 'bakery' ? BAKERY_SUBS.filter((b) => inAisle.some((p) => p.sub === b.id)) : [];
+    const list = sortList(applyFilters(inAisle.filter((p) => !st.bakerySub || st.aisleId !== 'bakery' || p.sub === st.bakerySub), s), s);
     return storeShell(s, `
       <nav class="crumbs" aria-label="Breadcrumb"><button class="link" data-act="nav" data-page="store">${esc(s.name)}</button> › <span>${esc(aisleName(st.aisleId))}</span></nav>
       <div class="list-head"><h1>${esc(aisleName(st.aisleId))}</h1><span class="muted">${list.length} items</span>${sortSelect()}</div>
-      <div class="pgrid">${list.map((p) => card(p, s)).join('')}</div>`);
+      ${subs.length ? `<div class="chips sub-chips" role="group" aria-label="Bakery categories"><button class="chip ${!st.bakerySub ? 'on' : ''}" aria-pressed="${!st.bakerySub}" data-act="bakery-sub" data-sub="">All</button>${subs.map((b) => `<button class="chip ${st.bakerySub === b.id ? 'on' : ''}" aria-pressed="${st.bakerySub === b.id}" data-act="bakery-sub" data-sub="${b.id}" data-guide="sub-${b.id}">${esc(b.name)}</button>`).join('')}</div>` : ''}
+      ${filterBar()}
+      ${list.length ? `<div class="pgrid">${list.map((p) => card(p, s)).join('')}</div>` : noneMatch()}`);
   }
 
   function searchPage() {
@@ -222,20 +240,71 @@ export function createShop(root, { onChange = () => {} } = {}) {
         : `<p class="empty">No results. Try a simpler word, like “cake” or “bananas”.</p>`}`;
     }
     const scored = storeProducts(s).map((p) => [p, matches(p, st.query)]);
-    const hits = sortList(scored.filter(([, sc]) => sc > 0).sort((a, b) => b[1] - a[1]).map(([p]) => p), s);
+    const allHits = scored.filter(([, sc]) => sc > 0).sort((a, b) => b[1] - a[1]).map(([p]) => p);
+    const hits = sortList(applyFilters(allHits, s), s);
     // A few related items so results never look empty.
     const words = st.query.toLowerCase().split(/\s+/).filter(Boolean);
     const related = storeProducts(s).filter((p) => !hits.includes(p) && words.some((w) => matches(p, w) > 0)).slice(0, 10);
     return storeShell(s, `
       <div class="list-head"><h1>Results for “${esc(st.query)}”</h1><span class="muted">${hits.length} item${hits.length === 1 ? '' : 's'} at ${esc(s.name)}</span>${sortSelect()}</div>
-      ${hits.length ? `<div class="pgrid">${hits.map((p) => card(p, s)).join('')}</div>` : `<p class="empty">No exact matches at ${esc(s.name)}.</p>`}
+      ${allHits.length ? filterBar() : ''}
+      ${hits.length ? `<div class="pgrid">${hits.map((p) => card(p, s)).join('')}</div>` : allHits.length ? noneMatch() : `<p class="empty">No exact matches at ${esc(s.name)}.</p>`}
       ${related.length ? `<h2 class="row-title">Related items</h2><div class="row-scroll">${related.map((p) => card(p, s)).join('')}</div>` : ''}`);
   }
 
   function buyAgain() {
     const s = store(st.storeId);
-    return storeShell(s, `<div class="list-head"><h1>Buy it again</h1></div><div class="empty-card">🧺<p>Items you've ordered from ${esc(s.name)} will show up here.</p><button class="secondary" data-act="nav" data-page="store">Browse the store</button></div>`);
+    if (!s) return ordersPage();
+    const ids = [...new Set(orders.flatMap((o) => o.lines.filter((l) => l.storeId === s.id).map((l) => l.id)))];
+    return storeShell(s, `<div class="list-head"><h1>Buy it again</h1></div>${ids.length
+      ? `<div class="pgrid">${ids.map((id) => card(product(id), s)).join('')}</div>`
+      : `<div class="empty-card">🧺<p>Items you've ordered from ${esc(s.name)} will show up here.</p><button class="secondary" data-act="nav" data-page="store">Browse the store</button></div>`}`);
   }
+
+  function wrapPage(inner) { const s = store(st.storeId); return s ? storeShell(s, inner) : `<div class="plain-page">${inner}</div>`; }
+
+  function ordersPage() {
+    return wrapPage(`<div class="list-head"><h1>Your orders</h1></div>${orders.length
+      ? orders.slice().reverse().map((o) => `<section class="order-card"><div class="oc-head"><strong>Order #${esc(o.no)}</strong><span class="muted">${esc(o.when)} · ${money(o.total)}</span><span class="oc-status">Received</span></div>
+          <div class="co-items">${o.lines.map((l) => { const p = product(l.id); return `<div class="co-item"><div class="dr-img">${img(p)}</div><div><div>${esc(p.name)}${l.qty > 1 ? ` × ${l.qty}` : ''}</div><small class="muted">${esc([l.size, l.message ? `“${l.message}”` : null].filter(Boolean).join(' · '))}</small></div><div>${money(l.price * l.qty)}</div></div>`; }).join('')}</div></section>`).join('')
+      : `<div class="empty-card">🧾<p>You haven't placed any orders in this session.</p><button class="secondary" data-act="home">Shop stores</button></div>`}`);
+  }
+
+  function listsPage() {
+    const s = store(st.storeId) || store('greenway');
+    const items = [...favs].map(product).filter(Boolean);
+    return wrapPage(`<div class="list-head"><h1>Your lists</h1><span class="muted">Favorites</span></div>${items.length
+      ? `<div class="pgrid">${items.map((p) => card(p, carries(s, p) ? s : STORES.find((x) => carries(x, p)))).join('')}</div>`
+      : `<div class="empty-card">♡<p>Tap the heart on any item to save it here.</p></div>`}`);
+  }
+
+  function helpPage() {
+    const qa = [
+      ['How do I find a cake without nuts?', 'Search for “cake”, then use the <strong>Nut-free</strong> filter above the results. Always open the item and read its <strong>Allergens</strong> section too.'],
+      ['How do I add a message to a cake?', 'Open the cake, pick a size, and type your message in “Message on the cake” before adding it to the cart.'],
+      ['When will my order arrive?', 'You choose a delivery day and time at checkout.'],
+      ['Which card can I use?', 'This is a demo shop. It only accepts the printed <strong>test card</strong> handed out in the study. Never type a real card.'],
+    ];
+    return wrapPage(`<div class="list-head"><h1>Help center</h1></div><div class="help-list">${qa.map(([q, a]) => `<details class="help-q"><summary>${esc(q)}</summary><p>${a}</p></details>`).join('')}</div>`);
+  }
+
+  function pricingModal() {
+    const s = store(st.storeId);
+    return `<div class="overlay" data-act="close-pricing"></div><div class="modal small-modal" role="dialog" aria-modal="true" aria-labelledby="pp-title"><button class="modal-x" data-act="close-pricing" aria-label="Close">✕</button><div class="modal-body"><h1 id="pp-title">Pricing policy</h1><p>${s ? esc(s.name) : 'This store'} sets the prices shown on Basketly. ${s && s.bulk ? 'Prices are the same as in the warehouse.' : 'Prices may be higher than in the store.'}</p><p class="muted">All prices in this demo are invented.</p><button class="primary" data-act="close-pricing">Got it</button></div></div>`;
+  }
+
+  // ── Filters ──
+  function applyFilters(list, s) {
+    const f = st.filters;
+    return list.filter((p) => (!f.nutFree || !hasNuts(p)) && (!f.glutenFree || glutenFree(p)) && (!f.under20 || offer(s, p).price < 20));
+  }
+  function filterBar() {
+    const f = st.filters;
+    const chip = (k, label, guide) => `<button class="chip filter ${f[k] ? 'on' : ''}" aria-pressed="${f[k]}" data-act="filter" data-filter="${k}" data-guide="${guide}">${f[k] ? '✓ ' : ''}${label}</button>`;
+    return `<div class="chips filter-bar" role="group" aria-label="Filters"><span class="muted small">Filter:</span>${chip('nutFree', 'Nut-free', 'filter-nut-free')}${chip('glutenFree', 'Gluten-free', 'filter-gluten-free')}${chip('under20', 'Under $20', 'filter-under-20')}${Object.values(f).some(Boolean) ? '<button class="link small" data-act="clear-filters">Clear filters</button>' : ''}</div>`;
+  }
+  function noneMatch() { return `<div class="empty-card">🔎<p>No items match these filters.</p><button class="secondary" data-act="clear-filters">Clear filters</button></div>`; }
+  const stars = (r) => '★★★★★'.slice(0, Math.round(r)) + '☆☆☆☆☆'.slice(0, 5 - Math.round(r));
 
   function deals() {
     const s = store(st.storeId);
@@ -271,8 +340,10 @@ export function createShop(root, { onChange = () => {} } = {}) {
           <div class="pprice ${deal ? 'deal' : ''}">${priceHtml(price)}${p.unit ? `<span class="per"> ${esc(p.unit)}</span>` : ''}${was ? ` <s>${money(was)}</s>` : ''}</div>
           <div class="pname">${p.brand && !/^(Bakery Fresh|Floral)$/.test(p.brand) ? `<span class="pbrand">${esc(p.brand)}</span> ` : ''}${esc(p.name)}</div>
           <div class="psize">${esc(o.size)}</div>
+          ${p.rating ? `<div class="prate" aria-hidden="true"><span>${stars(p.rating)}</span> ${p.rating.toFixed(1)} (${p.reviews.toLocaleString()})</div>` : ''}
           ${p.badge ? `<div class="pbadge">${esc(p.badge)}</div>` : '<div class="pstock">Many in stock</div>'}
         </button>
+        <button class="fav ${favs.has(p.id) ? 'on' : ''}" data-act="fav" data-id="${p.id}" aria-pressed="${favs.has(p.id)}" aria-label="Save ${esc(p.name)} to your list">${favs.has(p.id) ? '♥' : '♡'}</button>
         <div class="padd">${add}</div>
       </article>`;
   }
@@ -296,7 +367,8 @@ export function createShop(root, { onChange = () => {} } = {}) {
               ${p.brand ? `<button class="link brand-link" data-act="store-search" data-id="${s.id}" data-q="${esc(p.brand)}">${esc(p.brand)}</button>` : ''}
               <h1 id="pm-title">${esc(p.name)}</h1>
               <div class="pm-size">${esc(sizeOpt ? `${sizeOpt.label}, ${sizeOpt.note}` : o.size)}</div>
-              <div class="pm-rating" aria-label="Rated 4.7 out of 5">★★★★★ <span>4.7 (1,284)</span></div>
+              <button class="pm-rating link" data-act="section" data-sec="reviews" aria-label="Rated ${(p.rating || 4.5).toFixed(1)} out of 5, ${(p.reviews || 120).toLocaleString()} reviews. Show reviews">${stars(p.rating || 4.5)} <span>${(p.rating || 4.5).toFixed(1)} (${(p.reviews || 120).toLocaleString()})</span></button>
+              <div class="pm-tools"><button class="link small" data-act="fav" data-id="${p.id}" aria-pressed="${favs.has(p.id)}">${favs.has(p.id) ? '♥ Saved' : '♡ Save'}</button><button class="link small" data-act="section" data-sec="allergens">Allergens</button><button class="link small" data-act="share">Share</button></div>
               <div class="pm-stock">● Many in stock</div>
               <div class="pm-price">${priceHtml(price)}${p.unit ? `<span class="per"> ${esc(p.unit)}</span>` : ''}</div>
               ${p.options ? `
@@ -317,15 +389,32 @@ export function createShop(root, { onChange = () => {} } = {}) {
             </div>
           </div>
           <div class="pm-details">
-            ${p.details ? `<details open><summary>Details</summary><p>${esc(p.details)}</p></details>` : `<details open><summary>Details</summary><p>${esc(p.name)}, ${esc(o.size)}. Product details are provided by the store for this demo.</p></details>`}
-            ${p.ingredients ? `<details><summary>Ingredients</summary><p>${esc(p.ingredients)}</p></details>` : ''}
-            ${p.directions ? `<details><summary>Directions</summary><p>${esc(p.directions)}</p></details>` : ''}
-            ${p.allergens ? `<details><summary>Allergens</summary><p>${esc(p.allergens)}</p></details>` : ''}
+            ${section('details', 'Details', `<p>${esc(p.details || `${p.name}, ${o.size}. Product details are provided by the store for this demo.`)}</p>${p.directions ? `<p><strong>Storage:</strong> ${esc(p.directions)}</p>` : ''}`)}
+            ${p.ingredients || p.contains ? section('ingredients', 'Ingredients', `<p>${esc(p.ingredients || 'See the package for the full ingredient list.')}</p>`) : ''}
+            ${section('allergens', 'Allergens', `<p class="allergen-box ${hasNuts(p) ? 'warn' : 'ok'}">${hasNuts(p) ? '⚠️' : '✓'} ${esc(allergenText(p))}</p>`)}
+            ${section('reviews', `Reviews (${(p.reviews || 120).toLocaleString()})`, reviewsHtml(p))}
             <p class="disclaimer">Photo: ${esc(p.img.credit.author)}, ${esc(p.img.credit.license)}, via ${esc(p.img.credit.site)} (<a href="credits.html" target="_blank" rel="noopener">all credits</a>). Product photos and details are for illustration in this demo.</p>
           </div>
           ${related.length ? `<h2 class="row-title">Often bought together</h2><div class="row-scroll small">${related.map((x) => card(x, s)).join('')}</div>` : ''}
         </div>
       </div>`;
+  }
+
+  function section(id, title, body) {
+    const open = !!st.opened[id];
+    return `<div class="pm-sec ${open ? 'open' : ''}" data-guide="${id}"><button class="pm-sec-head" data-act="section" data-sec="${id}" aria-expanded="${open}"><span>${esc(title)}</span><span aria-hidden="true">${open ? '−' : '+'}</span></button>${open ? `<div class="pm-sec-body">${body}</div>` : ''}</div>`;
+  }
+  function reviewsHtml(p) {
+    const pool = [
+      ['Carol M.', 5, 'Fresh and lovely. The message was written neatly.'],
+      ['Dev R.', 4, 'Good value for the size. A bit sweet for me.'],
+      ['Joan T.', 5, 'Arrived on time and looked just like the photo.'],
+      ['Sam K.', 4, 'Everyone enjoyed it. Would order again.'],
+      ['Lena P.', 3, 'Tasty, but the box was slightly dented.'],
+    ];
+    const k = [...p.id].reduce((n, c) => n + c.charCodeAt(0), 0);
+    const picks = [0, 1, 2].map((i) => pool[(k + i * 2) % pool.length]);
+    return `<p class="muted small">Sample reviews written for this demo.</p>${picks.map(([who, r, t]) => `<div class="review"><div><strong>${esc(who)}</strong> <span class="stars" aria-label="${r} out of 5">${stars(r)}</span></div><p>${esc(t)}</p></div>`).join('')}`;
   }
 
   function cartDrawer() {
@@ -368,11 +457,11 @@ export function createShop(root, { onChange = () => {} } = {}) {
           <h1>Checkout</h1>
           <section class="co-sec" data-guide="address"><h2><span class="num">1</span> Delivery address</h2>
             <div class="grid2">
-              <label class="span2">Street address <input name="street" autocomplete="off" data-private></label>
+              <label class="span2">Street address <input name="street" data-addr autocomplete="off" data-private></label>
               <label>Apt, suite (optional) <input name="apt" autocomplete="off" data-private-opt></label>
-              <label>City <input name="city" autocomplete="off" data-private></label>
+              <label>City <input name="city" data-addr autocomplete="off" data-private></label>
               <label>State <input name="state" autocomplete="off" maxlength="2" data-private-opt></label>
-              <label>ZIP code <input name="zip" inputmode="numeric" autocomplete="off" data-private></label>
+              <label>ZIP code <input name="zip" data-addr inputmode="numeric" autocomplete="off" data-private></label>
               <label class="span2">Delivery instructions (optional) <textarea name="notes" rows="2" placeholder="e.g. Leave at the front door" data-private-opt></textarea></label>
             </div>
             <label class="check"><input type="checkbox" data-act="gift" ${st.gift ? 'checked' : ''}> This order is a gift</label>
@@ -384,8 +473,16 @@ export function createShop(root, { onChange = () => {} } = {}) {
           </section>
           <section class="co-sec"><h2><span class="num">3</span> Mobile number</h2>
             <label>Phone (optional, for delivery updates) <input name="phone" inputmode="tel" autocomplete="off" data-private-opt></label></section>
-          <section class="co-sec"><h2><span class="num">4</span> Payment</h2>
-            <div class="demo-pay">💳 No payment is needed: this is a demo shop. Never type real card details here.</div></section>
+          <section class="co-sec" data-guide="payment"><h2><span class="num">4</span> Payment</h2>
+            <div class="demo-pay">💳 Demo shop: use the printed <strong>test card</strong> you were given. Never type a real card here. Nothing is charged.</div>
+            <div class="grid2 card-form">
+              <label class="span2">Name on card <input name="ccname" autocomplete="off" spellcheck="false" data-private data-card></label>
+              <label class="span2">Card number <input name="ccnum" inputmode="numeric" autocomplete="off" maxlength="19" placeholder="1234 5678 9012 3456" data-private data-card></label>
+              <label>Expiry (MM/YY) <input name="ccexp" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="MM/YY" data-private data-card></label>
+              <label>Security code (CVC) <input name="cccvc" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="123" data-private data-card></label>
+            </div>
+            <div class="card-status" aria-live="polite">${cardStatus()}</div>
+          </section>
         </div>
         <aside class="co-side" data-guide="summary">
           <div data-commit><button class="primary big" data-act="place" data-guide="place-order">Place order</button></div>
@@ -400,6 +497,12 @@ export function createShop(root, { onChange = () => {} } = {}) {
           <div class="trow total"><span>Total</span><strong>${money(t.total)}</strong></div>
         </aside>
       </div>`;
+  }
+
+  function cardStatus() {
+    if (st.cardValid) return '<p class="ok-note">✓ Test card accepted</p>';
+    const errs = Object.values(st.cardErrors).filter(Boolean);
+    return errs.length ? errs.map((e) => `<p class="field-error">${esc(e)}</p>`).join('') : '';
   }
 
   function confirmation() {
@@ -451,15 +554,25 @@ export function createShop(root, { onChange = () => {} } = {}) {
     switch (a) {
       case 'home': return go('home', { storeId: null, query: '', productId: null, cartOpen: false });
       case 'menu': st.menuOpen = !st.menuOpen; return renderHeader();
-      case 'menu-item': case 'pricing': case 'address': case 'pickup': return toast('That part of Basketly isn\'t available in this demo.');
+      case 'menu-item': case 'pickup': return toast('That part of Basketly isn\'t available in this demo.');
+      case 'share': return toast('Link copied (demo).');
+      case 'address': st.addrOpen = !st.addrOpen; st.menuOpen = false; return renderHeader();
+      case 'pricing': st.pricingOpen = true; return renderModal();
+      case 'close-pricing': st.pricingOpen = false; return renderModal();
+      case 'page': return go(b.dataset.page, { productId: null, cartOpen: false });
+      case 'fav': { if (favs.has(id)) favs.delete(id); else favs.add(id); toast(favs.has(id) ? 'Saved to Your lists' : 'Removed from Your lists'); refreshCards(); return emit(); }
+      case 'filter': { const k = b.dataset.filter; st.filters = { ...st.filters, [k]: !st.filters[k] }; refreshCards(); return emit(); }
+      case 'clear-filters': st.filters = { nutFree: false, glutenFree: false, under20: false }; refreshCards(); return emit();
+      case 'bakery-sub': st.bakerySub = b.dataset.sub || null; refreshCards(); return emit();
+      case 'section': { const k = b.dataset.sec; st.opened = { ...st.opened, [k]: !st.opened[k] }; if (st.opened[k]) st.seen = { ...(st.seen || {}), [k]: true }; rerenderModalKeep(); const el = $modal.querySelector(`[data-guide="${k}"]`); if (el && st.opened[k]) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); return emit(); }
       case 'kind': st.kind = b.dataset.kind; renderMain(); return emit();
       case 'store': return go('store', { storeId: id, aisleId: null, query: '', productId: null, cartOpen: false });
       case 'store-search': return go('search', { storeId: id, query: b.dataset.q || st.query, productId: null, cartOpen: false });
       case 'nav': return go(b.dataset.page, { aisleId: null });
-      case 'aisle': return go('aisle', { aisleId: id, sort: 'relevance' });
+      case 'aisle': return go('aisle', { aisleId: id, sort: 'relevance', bakerySub: null });
       case 'open': {
         if (b.dataset.store) st.storeId = b.dataset.store;
-        Object.assign(st, { productId: id, size: null, message: '', qty: 1, sizeError: false, justAdded: false, cartOpen: false });
+        Object.assign(st, { productId: id, size: null, message: '', qty: 1, sizeError: false, justAdded: false, cartOpen: false, opened: {} });
         renderAll(); focusModal(); return emit();
       }
       case 'close-modal': st.productId = null; st.justAdded = false; renderAll(); return emit();
@@ -485,17 +598,18 @@ export function createShop(root, { onChange = () => {} } = {}) {
         if (l) { if (a === 'line-remove') l.qty = 0; else l.qty += a === 'line-inc' ? 1 : -1; if (l.qty <= 0) st.cart.splice(Number(b.dataset.ix), 1); }
         renderHeader(); renderDrawer(); refreshCards(); return emit();
       }
-      case 'checkout': return go('checkout', { cartOpen: false, productId: null, placeError: '' });
+      case 'checkout': return go('checkout', { cartOpen: false, productId: null, placeError: '', addressFilled: false, cardValid: false, cardErrors: {} });
       case 'back-to-store': return go(st.storeId ? 'store' : 'home');
       case 'day': st.day = b.dataset.day; st.slot = null; keepCheckout(() => renderMain()); return emit();
       case 'slot': st.slot = b.dataset.slot; keepCheckout(() => renderMain()); return emit();
       case 'tip': st.tip = Number(b.dataset.tip); keepCheckout(() => renderMain()); return emit();
       case 'place': {
-        const missing = [!st.addressFilled && 'your delivery address', !st.slot && 'a delivery time'].filter(Boolean);
-        if (missing.length) { st.placeError = `Please add ${missing.join(' and ')}.`; keepCheckout(() => renderMain()); return emit(); }
+        const missing = [!st.addressFilled && 'your delivery address', !st.slot && 'a delivery time', !st.cardValid && 'the test card details'].filter(Boolean);
+        if (missing.length) { st.placeError = `Please add ${missing.length > 1 ? missing.slice(0, -1).join(', ') + ' and ' + missing[missing.length - 1] : missing[0]}.`; keepCheckout(() => renderMain()); return emit(); }
         st.lastOrder = { lines: st.cart.map((l) => ({ ...l })), when: `${st.day} ${st.slot}` };
         st.orderNo = String(Math.floor(100000 + Math.random() * 899999));
-        return go('confirmation', { cart: [], addressFilled: false, day: null, slot: null, gift: false, placeError: '' });
+        orders.push({ no: st.orderNo, when: st.lastOrder.when, lines: st.lastOrder.lines, total: totals().total });
+        return go('confirmation', { cart: [], addressFilled: false, day: null, slot: null, gift: false, placeError: '', cardValid: false, cardErrors: {} });
       }
       default: return undefined;
     }
@@ -506,17 +620,37 @@ export function createShop(root, { onChange = () => {} } = {}) {
       const was = !!st.message.trim();
       st.message = e.target.value;
       if (was !== !!st.message.trim()) emit();
-    } else if (e.target.matches('[data-private]')) {
-      const all = [...root.querySelectorAll('[data-private]')].every((i) => i.value.trim());
+    } else if (e.target.matches('[data-card]')) {
+      onCardInput(e.target);
+    } else if (e.target.matches('[data-addr]')) {
+      const all = [...root.querySelectorAll('[data-addr]')].every((i) => i.value.trim());
       if (all !== st.addressFilled) { st.addressFilled = all; emit(); }
     }
   });
 
   doc.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
-    if (st.productId) { st.productId = null; st.justAdded = false; renderAll(); emit(); }
+    if (st.pricingOpen) { st.pricingOpen = false; renderModal(); }
+    else if (st.addrOpen) { st.addrOpen = false; renderHeader(); }
+    else if (st.productId) { st.productId = null; st.justAdded = false; renderAll(); emit(); }
     else if (st.cartOpen) { st.cartOpen = false; renderAll(); emit(); }
   });
+
+  // Card fields: formatted as typed and checked against the printed test card.
+  // The values stay in the inputs only; the state keeps a yes/no and the
+  // wording of any problem, never the digits.
+  function onCardInput(el) {
+    if (el.name === 'ccnum') { const pos = el.value.length; el.value = formatCardNumber(el.value); if (pos === el.value.length) el.setSelectionRange(pos, pos); }
+    if (el.name === 'ccexp') { const d = el.value.replace(/\D/g, '').slice(0, 4); el.value = d.length > 2 ? `${d.slice(0, 2)}/${d.slice(2)}` : d; }
+    if (el.name === 'cccvc') el.value = el.value.replace(/\D/g, '').slice(0, 4);
+    const get = (n) => (root.querySelector(`[name="${n}"]`) || {}).value || '';
+    const r = checkCard({ name: get('ccname'), number: get('ccnum'), expiry: get('ccexp'), cvc: get('cccvc') });
+    const changed = r.valid !== st.cardValid || JSON.stringify(r.errors) !== JSON.stringify(st.cardErrors);
+    st.cardValid = r.valid; st.cardErrors = r.errors;
+    if (r.valid) st.placeError = '';
+    const box = root.querySelector('.card-status'); if (box) box.innerHTML = cardStatus();
+    if (changed) emit();
+  }
 
   // A photo that can't load (offline, or the source moved) becomes a neutral
   // placeholder tile instead of a broken image.

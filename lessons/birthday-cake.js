@@ -19,16 +19,19 @@
 //                who goes ahead of the Teacher is never pulled back.
 //   learnedWhen  (optional) stricter check for the recap
 
-const CAKE = 'choc-mousse-cake';
-const inCart = (s) => !!s.cartHasCake;
-const pastCart = (s) => s.view === 'checkout' || s.view === 'confirmation';
+const CAKE = 'choc-mousse-cake'; // the suggestion when the agent picks for you
+// A cake is safe for the granddaughter when the shop says it has no nuts.
+const safeCake = (s) => !!(s.productIsCake && s.productHasNuts === false);
+const inCart = (s) => !!s.cartHasCake && !s.cartHasNutCake;
+const pastCart = (s) => (s.view === 'checkout' || s.view === 'confirmation') && !s.cartHasNutCake;
+const sec = (id) => `.modal [data-guide="${id}"] .pm-sec-head`;
 
 export const birthdayCake = {
   id: 'birthday-cake',
   title: 'How to order a birthday cake online',
   goal: 'order a birthday cake',
   site: 'basketly',
-  brief: 'Your granddaughter\'s birthday is this weekend. Send her a chocolate birthday cake with a message, from Summit Warehouse Club.',
+  brief: 'Your granddaughter\'s birthday is this weekend. Send her a birthday cake with a message, from Summit Warehouse Club. She is allergic to nuts, so the cake must be nut-free: check its allergens before you buy. Pay with the printed test card.',
   steps: [
     {
       id: 'choose-store',
@@ -64,29 +67,107 @@ export const birthdayCake = {
         'Click once inside that long box at the top so the cursor blinks, then type the words chocolate cake and press the Enter key.',
       ],
       learned: 'searched for what you wanted',
-      doneWhen: (s) => (/cake/i.test(s.query || '') && s.view === 'results') || s.productId === CAKE || inCart(s) || pastCart(s),
+      doneWhen: (s) => (/cake/i.test(s.query || '') && s.view === 'results') || s.productIsCake || inCart(s) || pastCart(s),
+    },
+    {
+      id: 'filter-nut-free',
+      kind: 'find',
+      narrate: 'Turning on the Nut-free filter.',
+      perform: (h) => h.click('[data-guide="filter-nut-free"]'),
+      view: 'results',
+      target: '[data-guide="filter-nut-free"]',
+      instruction: 'There are lots of cakes here, and some have nuts. Above the results there\'s a row of filters. Click "Nut-free" so the list only shows cakes made without nuts.',
+      short: 'Click the "Nut-free" filter above the results.',
+      why: 'Filters narrow a long list to what fits your needs. They\'re a first pass, though: you still check the item itself before buying.',
+      hints: [
+        'The filters are small rounded buttons just above the cake pictures, after the word "Filter".',
+        'Click the button that says "Nut-free". It turns purple with a check mark when it\'s on.',
+      ],
+      getBack: 'To use the filter, go back to the results: search for "chocolate cake" again in the bar at the top.',
+      getBackTarget: '[data-guide="search"]',
+      learned: 'filtered out cakes with nuts',
+      doneWhen: (s) => !!(s.filters && s.filters.nutFree) || s.productIsCake || inCart(s) || pastCart(s),
+      learnedWhen: (s) => !!(s.filters && s.filters.nutFree),
     },
     {
       id: 'open-product',
       kind: 'find',
-      narrate: 'Opening the Chocolate Mousse Cake.',
+      narrate: 'Opening the Chocolate Mousse Cake. It\'s listed as nut-free, but we\'ll check.',
       perform: (h) => h.click(`.pgrid [data-guide="product-${CAKE}"] .pcard-hit, [data-guide="product-${CAKE}"] .pcard-hit`),
       view: null,
       target: `[data-guide="product-${CAKE}"]`,
-      instruction: 'Here are the results. Find the Chocolate Mousse Cake, the dark chocolate cake, and click its picture or its name to open it.',
-      short: 'Open the Chocolate Mousse Cake.',
-      why: 'The results only show a summary. Opening an item shows its details and its choices, like size.',
+      instruction: 'Now pick a cake you like and click its picture or its name to open it. If you\'re not sure, the Chocolate Mousse Cake, the first one, is a good choice.',
+      short: 'Open a cake you like.',
+      why: 'The results only show a summary. Opening an item shows its details, its allergens and its choices, like size.',
       hints: [
-        'It\'s the first item in the results, with a picture of a round dark chocolate cake and a price of $14.99.',
-        'Click right on the cake picture. Don\'t click the small "Add" button on the corner; click the picture itself.',
+        'The Chocolate Mousse Cake is the first item in the results, a round dark chocolate cake for $14.99.',
+        'Click right on a cake\'s picture. Don\'t click the small "Add" button on the corner; click the picture itself.',
       ],
-      doneWhen: (s) => s.productId === CAKE || inCart(s) || pastCart(s),
+      learned: 'opened the cake',
+      doneWhen: (s) => s.productIsCake || inCart(s) || pastCart(s),
+    },
+    {
+      id: 'check-details',
+      kind: 'find',
+      narrate: 'Opening the cake\'s details.',
+      perform: (h) => h.click(sec('details')),
+      view: 'product',
+      target: '[data-guide="details"]',
+      instruction: 'Before choosing anything, read about the cake. Scroll down inside the cake\'s window and click "Details" to open it.',
+      short: 'Open "Details" in the cake\'s window.',
+      why: 'The details say what you\'re really getting, like how many people it serves and how to store it. The photo alone doesn\'t tell you.',
+      hints: [
+        'Below the "Add to cart" button there are sections with a plus sign: Details, Ingredients, Allergens and Reviews.',
+        'Scroll down inside the white window and click the word "Details". It opens to show a short description.',
+      ],
+      getBack: 'The cake\'s window has closed. Open the cake again by clicking its picture.',
+      getBackTarget: '.pgrid .pcard',
+      learned: 'read the details',
+      doneWhen: (s) => !!(s.productIsCake && s.detailsOpened) || inCart(s) || pastCart(s),
+    },
+    {
+      id: 'check-allergens',
+      kind: 'find',
+      narrate: 'Checking the allergens.',
+      perform: (h) => h.click(sec('allergens')),
+      view: 'product',
+      target: '[data-guide="allergens"]',
+      instruction: 'Now the most important check: allergens. Click "Allergens", just below Details and Ingredients, and look for nuts. It should say "Made without nuts".',
+      short: 'Open "Allergens" and check for nuts.',
+      why: 'A filter can be wrong or out of date, so for an allergy you always read the item\'s own allergen list. If it lists nuts, it isn\'t safe for her.',
+      hints: [
+        'The Allergens section is below Details and Ingredients, near the bottom of the cake\'s window. There\'s also an "Allergens" link under the stars at the top.',
+        'Click the word "Allergens". A green box means no nuts; an orange box with a warning sign means it contains nuts.',
+      ],
+      getBack: 'The cake\'s window has closed. Open a cake again by clicking its picture.',
+      getBackTarget: '.pgrid .pcard',
+      learned: 'checked the allergens',
+      doneWhen: (s) => !!(safeCake(s) && s.allergensOpened) || inCart(s) || pastCart(s),
+    },
+    {
+      id: 'read-reviews',
+      kind: 'find',
+      narrate: 'Opening the reviews.',
+      perform: (h) => h.click(sec('reviews')),
+      view: 'product',
+      target: '[data-guide="reviews"]',
+      instruction: 'This cake has no nuts. Last check: open "Reviews" at the bottom to see what other people said about it.',
+      short: 'Open "Reviews".',
+      why: 'Reviews tell you about things the shop doesn\'t, like whether it arrived on time or looked like the photo.',
+      hints: [
+        'Reviews is the last section in the cake\'s window, below Allergens. You can also click the stars near the cake\'s name.',
+        'Click the word "Reviews". It shows a few short comments with star ratings.',
+      ],
+      getBack: 'The cake\'s window has closed. Open the cake again by clicking its picture.',
+      getBackTarget: '.pgrid .pcard',
+      learned: 'read the reviews',
+      doneWhen: (s) => !!(safeCake(s) && s.reviewsOpened) || inCart(s) || pastCart(s),
     },
     {
       id: 'size',
       kind: 'choose',
       prefill: true,
-      ask: 'It comes in 7 inch, which serves 6 to 8 for $14.99, or 10 inch, which serves 12 to 16 for $22.99. Which size would you like?',
+      ask: 'It comes in 7 inch, which serves 6 to 8, or 10 inch, which serves 12 to 16. The prices are on each choice. Which size would you like?',
       askShort: 'which size, 7 inch or 10 inch?',
       options: () => ['7 inch', '10 inch'],
       parse: (u) => (/\b(10|ten)\b|\bbig(ger)?\b|\blarge\b/i.test(u) ? '10 inch' : /\b(7|seven)\b|\bsmall(er)?\b/i.test(u) ? '7 inch' : null),
@@ -102,9 +183,9 @@ export const birthdayCake = {
         'Click the box that says 10 inch, or 7 inch for a smaller cake. It turns purple when it\'s chosen. You may need to scroll down a little inside the cake\'s window.',
       ],
       getBack: 'The cake\'s window has closed. To choose a size, open the cake again by clicking its picture.',
-      getBackTarget: `[data-guide="product-${CAKE}"]`,
+      getBackTarget: '.pgrid .pcard',
       learned: 'chose the size',
-      doneWhen: (s) => !!(s.productId === CAKE && s.size) || inCart(s) || pastCart(s),
+      doneWhen: (s) => !!(safeCake(s) && s.size) || inCart(s) || pastCart(s),
     },
     {
       id: 'message',
@@ -130,9 +211,9 @@ export const birthdayCake = {
         'Click inside the empty box under "Message on the cake" so the cursor blinks, then type your message. Say "done" when you have.',
       ],
       getBack: 'To add a message, open the cake again by clicking its picture.',
-      getBackTarget: `[data-guide="product-${CAKE}"]`,
+      getBackTarget: '.pgrid .pcard',
       learned: 'added a message',
-      doneWhen: (s) => !!(s.productId === CAKE && s.messageFilled) || inCart(s) || pastCart(s),
+      doneWhen: (s) => !!(safeCake(s) && s.messageFilled) || inCart(s) || pastCart(s),
       learnedWhen: (s) => !!s.messageFilled || !!s.cartHasMessage,
     },
     {
@@ -150,7 +231,7 @@ export const birthdayCake = {
         'Scroll down a little inside the cake\'s window if you need to, then click the purple button that says "Add to cart".',
       ],
       getBack: 'The cake isn\'t in your cart yet. Open the cake again by clicking its picture.',
-      getBackTarget: `[data-guide="product-${CAKE}"]`,
+      getBackTarget: '.pgrid .pcard',
       learned: 'put it in your cart',
       doneWhen: (s) => inCart(s) || pastCart(s),
     },
@@ -186,6 +267,7 @@ export const birthdayCake = {
       ],
       getBack: 'The cart has closed. Open it again with the cart button at the top right.',
       getBackTarget: '[data-guide="cart"]',
+      learned: 'checked the cart',
       doneWhen: (s) => pastCart(s),
     },
     {
@@ -239,6 +321,24 @@ export const birthdayCake = {
       doneWhen: (s) => !!s.deliveryDay || s.view === 'confirmation',
     },
     {
+      id: 'payment',
+      kind: 'private',
+      view: 'checkout',
+      target: '[data-guide="payment"]',
+      instruction: 'Now the payment, in section 4. Take the printed test card you were given and copy it into the boxes: the name on the card, the 16-digit card number, the expiry date as month and year, and the 3-digit security code from the back.',
+      short: 'Type the test card details in section 4, Payment.',
+      why: 'Card details are private, so they\'re always yours to type. On any site, check for the lock and "Secure checkout" at the top before you type a card.',
+      hints: [
+        'The payment boxes are in section 4, below the delivery time and the phone number. Scroll down if you need to.',
+        'Type the name exactly as printed, then the long number. The expiry goes in as two digits for the month, then two for the year, like 12/30. The security code is the three digits on the back.',
+      ],
+      getBack: 'To pay, go back to checkout: open the cart at the top right, then click "Go to checkout".',
+      getBackTarget: '[data-guide="cart"]',
+      sensitive: true,
+      learned: 'entered the card details',
+      doneWhen: (s) => !!s.cardValid || s.view === 'confirmation',
+    },
+    {
       id: 'place-order',
       kind: 'commit',
       view: 'checkout',
@@ -255,6 +355,10 @@ export const birthdayCake = {
       learned: 'reviewed the order before placing it',
       doneWhen: (s) => s.view === 'confirmation',
     },
+  ],
+  watch: [
+    { id: 'nut-cake', when: (s) => !!(s.productIsCake && s.productHasNuts && s.allergensOpened), say: 'Careful: this cake contains nuts, so it isn\'t safe for your granddaughter. Close this window with the ✕ and choose a cake that says "Made without nuts".' },
+    { id: 'nut-cart', when: (s) => !!s.cartHasNutCake, say: 'Wait: the cake in your cart contains nuts. Open the cart and click "Remove" next to it, then choose a nut-free cake.' },
   ],
   matches: /\b(cake|birthday|bake|bakery|order)\b/i,
 };

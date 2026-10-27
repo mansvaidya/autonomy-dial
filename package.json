@@ -6,6 +6,6 @@
   "description": "A voice agent with an autonomy dial (Teacher, Helper, Autopilot) and a familiarity dial, on two demo websites.",
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "start": "python3 -m http.server 4100 --bind 127.0.0.1"
+    "start": "node server.js"
   }
 }

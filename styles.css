@@ -139,3 +139,40 @@ button, input, select { font: inherit; color: inherit; }
 .settings-sheet .dials { border-bottom: 1px solid var(--line); padding-bottom: 14px; gap: 16px; }
 .settings-sheet .settings { margin: 0; border: 0; border-radius: 0; padding: 14px 16px 20px; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
 .settings-sheet .settings label { width: 100%; }
+
+/* ── Agent brain ── */
+.stops.two { grid-template-columns: 1fr 1fr; }
+.stop.unavailable { opacity: .5; }
+.ai-badge { font-size: .7rem; font-weight: 900; letter-spacing: .06em; color: #fff; background: linear-gradient(135deg, #d97757, #b5527a); border-radius: 6px; padding: 3px 7px; }
+.ai-badge[hidden] { display: none; }
+.thinking { background: var(--bg); border-radius: 999px; padding: 2px 10px; font-weight: 600; animation: think 1.2s ease-in-out infinite; }
+.thinking[hidden] { display: none; }
+@keyframes think { 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .thinking { animation: none; } }
+
+/* ── Spoken captions and live speech ── */
+.msg .bubble .unsaid { color: transparent; }
+.msg.speaking-now .bubble { box-shadow: 0 0 0 3px rgba(46, 139, 87, .18); }
+.msg.live-user .bubble { font-style: italic; opacity: .75; border: 2px dashed var(--line); }
+
+/* ── Collapsing the panel ── */
+.agent[hidden] { display: none !important; }
+body.agent-collapsed .layout { grid-template-columns: 1fr; }
+@media (max-width: 900px) { body.agent-collapsed .layout { grid-template-rows: 1fr; } }
+.collapse { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; border: 0; background: none; color: var(--muted); cursor: pointer; }
+.collapse:hover { background: var(--bg); color: var(--ink); }
+.agent-dock { position: fixed; z-index: 60; left: 16px; bottom: 16px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: min(420px, calc(100vw - 32px)); }
+.agent-dock[hidden] { display: none; }
+.dock-caption { display: none; background: var(--surface); color: var(--ink); border: 2px solid var(--teacher); border-radius: 14px; padding: 10px 14px; box-shadow: 0 8px 24px rgba(0,0,0,.18); line-height: 1.4; }
+.agent-dock.has-caption .dock-caption:not(:empty) { display: block; }
+.dock-row { display: flex; gap: 8px; }
+.dock-mic, .dock-open { border: 0; border-radius: 999px; min-height: 52px; font: inherit; font-weight: 800; cursor: pointer; box-shadow: 0 6px 20px rgba(0,0,0,.2); }
+.dock-mic { width: 52px; background: var(--brand-soft); border: 2px solid var(--teacher); font-size: 1.2rem; }
+.dock-mic.on { background: var(--teacher); color: #fff; }
+.dock-mic[disabled] { opacity: .5; }
+.dock-open { padding: 0 18px; background: var(--teacher); color: #fff; display: flex; align-items: center; gap: 8px; }
+.dock-dot { width: 9px; height: 9px; border-radius: 50%; background: #9ff0c0; }
+.mic.on.paused { background: var(--brand-soft); color: var(--ink); }
+.mic.on:not(.paused) { animation: mic-live 1.6s ease-in-out infinite; }
+@keyframes mic-live { 50% { box-shadow: 0 0 0 6px rgba(46, 139, 87, .25); } }
+@media (prefers-reduced-motion: reduce) { .mic.on:not(.paused) { animation: none; } }

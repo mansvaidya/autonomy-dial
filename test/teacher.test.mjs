@@ -4,11 +4,15 @@ import { createAgent, createTeacher, parseUtterance, policyFor } from '../src/ag
 import { birthdayCake } from '../src/lessons/birthday-cake.js';
 import { partyMenu } from '../src/lessons/party-menu.js';
 
-const base = { view: 'home', page: 'home', storeId: null, query: '', productId: null, size: null, messageFilled: false, cartOpen: false, cartCount: 0, cartHasMessage: false, cartHasCake: false, deliveryDay: null, addressFilled: false, days: ['Today', 'Tomorrow', 'Thursday', 'Friday'] };
+const base = { view: 'home', page: 'home', storeId: null, query: '', productId: null, size: null, messageFilled: false, cartOpen: false, cartCount: 0, cartHasMessage: false, cartHasCake: false, cartHasNutCake: false, filters: { nutFree: false }, productIsCake: false, productHasNuts: null, detailsOpened: false, allergensOpened: false, reviewsOpened: false, deliveryDay: null, addressFilled: false, cardValid: false, days: ['Today', 'Tomorrow', 'Thursday', 'Friday'] };
 const at = (patch) => ({ ...base, ...patch });
 const CAKE = 'choc-mousse-cake';
 const inStore = { storeId: 'summit', view: 'store', page: 'store' };
-const onCake = { ...inStore, view: 'product', query: 'chocolate cake', productId: CAKE };
+const results = { ...inStore, view: 'results', page: 'search', query: 'chocolate cake' };
+const filtered = { ...results, filters: { nutFree: true } };
+// A nut-free cake just opened, and the same cake once its details, allergens and reviews are read.
+const opened = { ...filtered, view: 'product', productId: CAKE, productIsCake: true, productHasNuts: false };
+const onCake = { ...opened, detailsOpened: true, allergensOpened: true, reviewsOpened: true };
 const inCart = { storeId: 'summit', query: 'chocolate cake', cartCount: 1, cartHasCake: true, cartHasMessage: true };
 const checkout = { ...inCart, view: 'checkout', page: 'checkout' };
 
@@ -55,7 +59,11 @@ test('Teacher walks the whole task as the person acts, then closes reflectively'
   t.start(0);
   const path = [
     at(inStore),
-    at({ ...inStore, view: 'results', page: 'search', query: 'chocolate cake' }),
+    at(results),
+    at(filtered),
+    at(opened),
+    at({ ...opened, detailsOpened: true }),
+    at({ ...opened, detailsOpened: true, allergensOpened: true }),
     at(onCake),
     at({ ...onCake, size: '10 inch' }),
     at({ ...onCake, size: '10 inch', messageFilled: true }),
@@ -64,12 +72,14 @@ test('Teacher walks the whole task as the person acts, then closes reflectively'
     at(checkout),
     at({ ...checkout, addressFilled: true }),
     at({ ...checkout, addressFilled: true, deliveryDay: 'Tomorrow 1pm–3pm' }),
+    at({ ...checkout, addressFilled: true, deliveryDay: 'Tomorrow 1pm–3pm', cardValid: true }),
   ];
   const targets = [];
   for (const s of path) { const turn = t.observe(s, 1); assert.equal(turn.act, null, 'Teacher never acts'); targets.push(turn.highlight && turn.highlight.target); }
   assert.deepEqual(targets, [
-    '[data-guide="search"]', '[data-guide="product-choc-mousse-cake"]', '[data-guide="size"]', '[data-guide="message"]', '[data-guide="add-to-cart"]',
-    '[data-guide="view-cart"], [data-guide="cart"]', '[data-guide="checkout"]', '[data-guide="address"]', '[data-guide="delivery-day"]', '[data-guide="summary"]',
+    '[data-guide="search"]', '[data-guide="filter-nut-free"]', '[data-guide="product-choc-mousse-cake"]', '[data-guide="details"]', '[data-guide="allergens"]', '[data-guide="reviews"]',
+    '[data-guide="size"]', '[data-guide="message"]', '[data-guide="add-to-cart"]',
+    '[data-guide="view-cart"], [data-guide="cart"]', '[data-guide="checkout"]', '[data-guide="address"]', '[data-guide="delivery-day"]', '[data-guide="payment"]', '[data-guide="summary"]',
   ]);
   const end = t.observe(at({ view: 'confirmation', page: 'confirmation', storeId: 'summit' }), 2);
   assert.equal(end.phase, 'done');
@@ -112,7 +122,7 @@ test('moving to another page gets a one-time way back', () => {
   const t = createTeacher({ lesson: birthdayCake, pointing: 'now' });
   t.observe(at(onCake), 0);
   t.start(0);
-  const off = t.observe(at({ ...inStore, view: 'results', page: 'search', query: 'chocolate cake' }), 1);
+  const off = t.observe(at(filtered), 1);
   assert.match(off.say, /different page/);
   assert.equal(t.observe(at({ ...inStore }), 2), null);
   assert.equal(t.observe(at(onCake), 3).highlight.target, '[data-guide="size"]');
@@ -184,7 +194,11 @@ test('Autopilot does the steps, asks for choices, and hands back private and fin
   assert.deepEqual(t.act, { stepId: 'choose-store', value: null });
   assert.match(t.say, /Opening Summit/);
   t = a.observe(at(inStore), 1); assert.equal(t.act.stepId, 'search');
-  t = a.observe(at({ ...inStore, view: 'results', page: 'search', query: 'chocolate cake' }), 2); assert.equal(t.act.stepId, 'open-product');
+  t = a.observe(at(results), 2); assert.equal(t.act.stepId, 'filter-nut-free');
+  t = a.observe(at(filtered), 2); assert.equal(t.act.stepId, 'open-product');
+  t = a.observe(at(opened), 2); assert.equal(t.act.stepId, 'check-details');
+  t = a.observe(at({ ...opened, detailsOpened: true }), 2); assert.equal(t.act.stepId, 'check-allergens');
+  t = a.observe(at({ ...opened, detailsOpened: true, allergensOpened: true }), 2); assert.equal(t.act.stepId, 'read-reviews');
   t = a.observe(at(onCake), 3);
   assert.deepEqual(t.act, { stepId: 'size', value: '10 inch' }, 'size came from the request');
   t = a.observe(at({ ...onCake, size: '10 inch' }), 4);
@@ -202,6 +216,9 @@ test('Autopilot does the steps, asks for choices, and hands back private and fin
   t = a.observe(at({ ...checkout, addressFilled: true }), 11);
   assert.deepEqual(t.act.value, { day: 'Tomorrow', slot: '1pm–3pm' }, 'delivery time came from the request');
   t = a.observe(at({ ...checkout, addressFilled: true, deliveryDay: 'Tomorrow 1pm–3pm' }), 12);
+  assert.equal(t.act, null, 'card details are handed back');
+  assert.match(t.say, /This part is yours/);
+  t = a.observe(at({ ...checkout, addressFilled: true, deliveryDay: 'Tomorrow 1pm–3pm', cardValid: true }), 12);
   assert.equal(t.act, null, 'the final decision is handed back');
   assert.match(t.say, /This decision is yours/);
   assert.match(a.hear('just place the order', 13).say, /stays with you/);
@@ -226,7 +243,7 @@ test('turning the dial mid-task re-describes the current step', () => {
   const up = a.setAutonomy(8, 1);
   assert.match(up.say, /I'll take it from here/);
   assert.equal(up.act.stepId, 'search');
-  a.observe(at({ ...inStore, view: 'results', page: 'search', query: 'chocolate cake' }), 2);
+  a.observe(at(results), 2);
   const down = a.setAutonomy(2, 3);
   assert.equal(down.act, null);
   assert.match(down.say, /you'll do the clicking/);
@@ -309,8 +326,8 @@ test('Teacher gives wait time: speaks the step, points only after a few seconds'
   const first = t.start(0);
   assert.match(first.say, /choose the store/);
   assert.equal(first.highlight, null, 'not pointing yet');
-  assert.equal(t.tick(3000), null);
-  const shown = t.tick(4000);
+  assert.equal(t.tick(6000), null);
+  const shown = t.tick(7000);
   assert.equal(shown.say, null, 'shown quietly');
   assert.equal(shown.highlight.target, '[data-guide="store-summit"]');
   assert.equal(shown.reveal, 'wait-time');
@@ -320,6 +337,7 @@ test('Teacher points sooner when the person seems unsure, then teaches', () => {
   const t = createTeacher({ lesson: birthdayCake, familiarity: 0, tone: 'warm' });
   t.observe(base, 0); t.start(0);
   assert.equal(t.signal('empty-click', 500), null, 'one sign is not enough');
+  assert.equal(t.signal('empty-click', 700), null, 'Teacher waits for a third sign');
   const shown = t.signal('empty-click', 800);
   assert.match(shown.say, /show you where/);
   assert.equal(shown.highlight.target, '[data-guide="store-summit"]');
@@ -332,10 +350,10 @@ test('Teacher points sooner when the person seems unsure, then teaches', () => {
 
 test('familiarity lengthens the wait; level 1 shortens it', () => {
   const known = createAgent({ lesson: birthdayCake, autonomy: 2, familiarity: 2 }); known.observe(base, 0); known.start(0);
-  assert.equal(known.tick(6000), null);
-  assert.ok(known.tick(9000).highlight);
+  assert.equal(known.tick(10000), null);
+  assert.ok(known.tick(14000).highlight);
   const extra = createAgent({ lesson: birthdayCake, autonomy: 1, familiarity: 0 }); extra.observe(base, 0); extra.start(0);
-  assert.ok(extra.tick(2000).highlight);
+  assert.ok(extra.tick(3500).highlight);
 });
 
 test('Helper stays quiet until the person seems unsure, then offers to do the step', () => {
@@ -362,4 +380,44 @@ test('Autopilot hand-back steps are pointed at right away', () => {
   const a = createAgent({ lesson: birthdayCake, autonomy: 8 });
   a.observe(at(checkout), 0);
   assert.equal(a.start(0).highlight.target, '[data-guide="address"]');
+});
+
+test('Teacher pauses before the next step after the person finishes one', () => {
+  const t = createTeacher({ lesson: birthdayCake, pointing: 'now' });
+  t.observe(base, 0); t.start(0);
+  const next = t.observe(at(inStore), 1000);
+  assert.ok(next.delay >= 2000, 'a calm pause');
+  const auto = createAgent({ lesson: birthdayCake, autonomy: 8 });
+  auto.observe(base, 0); auto.start(0);
+  assert.equal(auto.observe(at(inStore), 1000).delay, undefined, 'Autopilot keeps going');
+});
+
+test('cake: a cake with nuts is caught at the allergen check and in the cart', () => {
+  const t = createTeacher({ lesson: birthdayCake, pointing: 'now' });
+  const nutCake = { ...filtered, view: 'product', productId: 'carrot-cake', productIsCake: true, productHasNuts: true, detailsOpened: true };
+  t.observe(at(nutCake), 0); t.start(0);
+  assert.equal(t.step.id, 'check-allergens');
+  const warn = t.observe(at({ ...nutCake, allergensOpened: true }), 1);
+  assert.match(warn.say, /contains nuts/);
+  assert.equal(t.step.id, 'check-allergens', 'a nut cake does not pass the allergen check');
+  const t2 = createTeacher({ lesson: birthdayCake, pointing: 'now' });
+  t2.observe(at({ ...nutCake, cartHasCake: true, cartHasNutCake: true, cartCount: 1 }), 0);
+  t2.start(0);
+  assert.notEqual(t2.step.id, 'open-cart', 'a nut cake in the cart does not count');
+});
+
+test('payment is the person\'s to type, and the shop only takes the printed test card', async () => {
+  const { checkCard, luhn } = await import('../src/payment.js');
+  const now = new Date(2026, 9, 27);
+  assert.ok(luhn('4242 4242 4242 4242'));
+  assert.equal(checkCard({ name: 'Alex Morgan', number: '4242 4242 4242 4242', expiry: '12/30', cvc: '123' }, now).valid, true);
+  const other = checkCard({ name: 'Alex Morgan', number: '4000 0566 5566 5556', expiry: '12/30', cvc: '123' }, now);
+  assert.equal(other.valid, false); assert.match(other.errors.card, /printed test card/);
+  assert.match(checkCard({ name: 'A', number: '4242 4242 4242 4241', expiry: '12/30', cvc: '123' }, now).errors.number, /doesn’t look right/);
+  assert.match(checkCard({ name: 'A', number: '4242424242424242', expiry: '01/20', cvc: '123' }, now).errors.expiry, /expiry/);
+  assert.deepEqual(checkCard({ name: '', number: '4242', expiry: '', cvc: '' }, now).errors, {}, 'no errors while still typing');
+  const a = createAgent({ lesson: birthdayCake, autonomy: 9 });
+  a.observe(at({ ...checkout, addressFilled: true, deliveryDay: 'Tomorrow 1pm–3pm' }), 0);
+  const t = a.start(0);
+  assert.equal(a.step.id, 'payment'); assert.equal(t.act, null);
 });

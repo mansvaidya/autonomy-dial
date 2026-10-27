@@ -68,7 +68,8 @@ export function createSpeaker({ rate = 0.95 } = {}) {
   let enabled = true;
   let lastCancel = 0;
   let voiceName = null;
-  const live = new Set(); // keep utterances alive until they finish
+  const live = new Set();   // keep utterances alive until they finish
+  const lines = new Set();  // lines not yet finished, so cancel can finish their captions
   const listeners = new Set();
   const notify = () => { const on = live.size > 0; listeners.forEach((fn) => fn(on)); };
 
@@ -79,17 +80,40 @@ export function createSpeaker({ rate = 0.95 } = {}) {
   };
   if (TTS) { voice(); W.speechSynthesis.addEventListener && W.speechSynthesis.addEventListener('voiceschanged', voice); }
 
-  function say(pieces) {
+  // Speak one line as sentence pieces, reporting progress through the whole
+  // line (0..1) so captions can follow the voice. Word-boundary events drive
+  // progress when the voice provides them; otherwise it's estimated from the
+  // speaking rate.
+  function say(line) {
     const v = voice();
-    for (const piece of pieces) {
+    const total = line.pieces.reduce((n, p) => n + p.length, 0) || 1;
+    let before = 0;
+    line.pieces.forEach((piece, k) => {
+      const offset = before;
+      before += piece.length;
       const u = new SpeechSynthesisUtterance(piece);
       if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'en-US';
       u.rate = rate;
       live.add(u);
-      u.onstart = notify;
-      u.onend = u.onerror = () => { live.delete(u); notify(); };
+      let timer = 0, boundary = false;
+      const progress = (charsInPiece) => line.onProgress(Math.min(1, (offset + charsInPiece) / total));
+      u.onstart = () => {
+        if (k === 0) line.start();
+        notify();
+        const cps = 14 * rate; // about 2.5 words a second
+        const t0 = Date.now();
+        timer = setInterval(() => { if (!boundary) progress(Math.min(piece.length, (Date.now() - t0) / 1000 * cps)); }, 120);
+      };
+      u.onboundary = (e) => { if (e.name === 'word' || e.name === undefined) { boundary = true; progress(e.charIndex + (e.charLength || 0)); } };
+      u.onend = u.onerror = () => {
+        clearInterval(timer);
+        live.delete(u);
+        progress(piece.length);
+        if (k === line.pieces.length - 1) line.finish();
+        notify();
+      };
       W.speechSynthesis.speak(u);
-    }
+    });
     // Chrome can leave the queue paused after a cancel; nudge it.
     if (W.speechSynthesis.paused) W.speechSynthesis.resume();
     notify();
@@ -102,21 +126,36 @@ export function createSpeaker({ rate = 0.95 } = {}) {
     set rate(v) { rate = Math.min(1.4, Math.max(0.6, Number(v) || 1)); },
     get voiceName() { return voiceName; },
     onSpeaking(fn) { listeners.add(fn); return () => listeners.delete(fn); },
-    /** Speak a line. With {queue:true} it waits for earlier lines (agent
-     *  narration in a row); otherwise it interrupts them. */
-    speak(text, { queue = false } = {}) {
-      if (!TTS || !enabled || !text) return;
+    /**
+     * Speak a line. With {queue:true} it waits for earlier lines (agent
+     * narration in a row); otherwise it interrupts them.
+     * Callbacks: onStart() when the voice begins this line, onProgress(0..1)
+     * as it speaks, onEnd({cancelled}) when it finishes or is cut off. When
+     * speech is off or unavailable, they fire straight away.
+     */
+    speak(text, { queue = false, onStart = () => {}, onProgress = () => {}, onEnd = () => {} } = {}) {
+      let done = false, started = false;
+      const line = {
+        pieces: chunks(text),
+        start() { if (!started) { started = true; onStart(); } },
+        onProgress,
+        finish(cancelled = false) { if (done) return; done = true; lines.delete(line); line.start(); onProgress(1); onEnd({ cancelled }); },
+      };
+      if (!TTS || !enabled || !text || !line.pieces.length) { line.finish(); return; }
+      lines.add(line);
       try {
         if (!queue && (W.speechSynthesis.speaking || W.speechSynthesis.pending)) this.cancel();
-        const pieces = chunks(text);
         const wait = Math.max(0, 120 - (Date.now() - lastCancel));
-        if (wait) setTimeout(() => say(pieces), wait); else say(pieces);
-      } catch { live.clear(); notify(); }
+        if (wait) setTimeout(() => (done ? null : say(line)), wait); else say(line);
+        // If the voice never starts (no voices, blocked audio), show the words anyway.
+        setTimeout(() => { if (!started && !done && !W.speechSynthesis.speaking) line.finish(true); }, 2500 + wait);
+      } catch { line.finish(true); live.clear(); notify(); }
     },
     cancel() {
       if (TTS) { try { W.speechSynthesis.cancel(); } catch {} }
       lastCancel = Date.now();
       live.clear();
+      for (const l of [...lines]) l.finish(true); // show the full text of anything cut off
       notify();
     },
   };
@@ -135,61 +174,77 @@ export const LISTEN_ERRORS = {
 };
 
 /**
- * Tap-to-talk recognition: one request per tap. Predictable, and it never
- * listens in the background without the person knowing.
+ * Hands-free voice input: switch it on once and it keeps listening, sending
+ * each thing the person says, until it's switched off. While the agent is
+ * speaking it pauses (so it doesn't hear itself) and then resumes.
+ *
+ *   const mic = createListener({ onInterim, onFinal, onState });
+ *   mic.start()  → on      mic.stop() → off      mic.pause()/resume()
+ *
+ * onState('listening' | 'paused' | 'idle' | 'error', errorCode)
  */
 export function createListener({ onInterim = () => {}, onFinal = () => {}, onState = () => {} } = {}) {
   if (!SR) return null;
+  let on = false;          // the person's switch
+  let paused = false;      // paused while the agent speaks
   let rec = null;
-  let listening = false;
+  let running = false;
+  let heardAudio = false;
+  let firstStart = true;
+  let restartTimer = 0, watchdog = 0;
+  let interimText = '';
+
+  function session() {
+    if (!on || paused || running) return;
+    rec = new SR();
+    rec.lang = 'en-US';
+    rec.interimResults = true;
+    rec.continuous = true;
+    rec.maxAlternatives = 1;
+    interimText = '';
+    rec.onaudiostart = () => { heardAudio = true; clearTimeout(watchdog); };
+    rec.onresult = (e) => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const r = e.results[i];
+        if (r.isFinal) { const t = r[0].transcript.trim(); interimText = ''; if (t) onFinal(t); }
+        else interim += r[0].transcript;
+      }
+      interimText = interim.trim();
+      onInterim(interimText);
+    };
+    rec.onerror = (e) => {
+      const err = (e && e.error) || 'unknown';
+      if (err === 'no-speech' || err === 'aborted') return; // normal while hands-free
+      if (['not-allowed', 'service-not-allowed', 'audio-capture', 'language-not-supported'].includes(err)) { switchOff(err); return; }
+      if (err === 'network') { switchOff('network'); }
+    };
+    rec.onend = () => {
+      running = false;
+      // Chrome ends sessions after silence; anything half-heard is sent.
+      if (interimText) { const t = interimText; interimText = ''; onInterim(''); onFinal(t); }
+      if (on && !paused) { clearTimeout(restartTimer); restartTimer = setTimeout(session, 250); }
+    };
+    try {
+      rec.start();
+      running = true;
+      onState(paused ? 'paused' : 'listening');
+      // Some browsers accept start() and never answer.
+      if (firstStart) { clearTimeout(watchdog); watchdog = setTimeout(() => { if (!heardAudio) switchOff('no-response'); }, 6000); }
+      firstStart = false;
+    } catch { running = false; restartTimer = setTimeout(session, 500); }
+  }
+
+  function halt() { clearTimeout(restartTimer); try { rec && rec.abort(); } catch {} running = false; }
+  function switchOff(err) { on = false; halt(); clearTimeout(watchdog); onInterim(''); onState(err ? 'error' : 'idle', err); }
+
   return {
-    get listening() { return listening; },
-    start() {
-      if (listening) return;
-      rec = new SR();
-      rec.lang = 'en-US';
-      rec.interimResults = true;
-      rec.continuous = false;
-      rec.maxAlternatives = 1;
-      let finalText = '';
-      let interimText = '';
-      let failed = null;
-      rec.onresult = (e) => {
-        let interim = '';
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          const r = e.results[i];
-          if (r.isFinal) finalText += r[0].transcript; else interim += r[0].transcript;
-        }
-        interimText = interim;
-        onInterim((finalText + ' ' + interim).trim());
-      };
-      // Watchdog: some browsers accept start() and then never answer.
-      let gotAudio = false, ended = false;
-      const clear = () => { clearTimeout(noStartTimer); clearTimeout(maxTimer); clearTimeout(killTimer); };
-      const giveUp = (why) => { if (ended) return; ended = true; clear(); listening = false; try { rec.abort(); } catch {} onState('error', why); };
-      const noStartTimer = setTimeout(() => { if (!gotAudio) giveUp('no-response'); }, 6000);
-      const maxTimer = setTimeout(() => { try { rec.stop(); } catch {} }, 20000);
-      let killTimer = 0;
-      rec.onaudiostart = () => { gotAudio = true; };
-      rec.onerror = (e) => { failed = (e && e.error) || 'unknown'; };
-      rec.onend = () => {
-        if (ended) return;
-        ended = true;
-        clear();
-        listening = false;
-        // If the person tapped to stop before Chrome finalised, use what it heard so far.
-        const heard = (finalText || interimText).trim();
-        if (heard) { onState('idle'); onFinal(heard); return; }
-        if (failed && failed !== 'aborted') onState('error', failed);
-        else onState('error', 'no-speech');
-      };
-      this._giveUp = giveUp;
-      this._arm = () => { killTimer = setTimeout(() => giveUp(gotAudio ? 'no-speech' : 'no-response'), 2500); };
-      try { rec.start(); listening = true; onState('listening'); } catch { clear(); listening = false; onState('error', 'start-failed'); }
-    },
-    stop() {
-      try { rec && rec.stop(); } catch {}
-      if (this._arm) this._arm(); // if the browser never ends the session, end it ourselves
-    },
+    get listening() { return on; },
+    get paused() { return paused; },
+    start() { if (on) return; on = true; paused = false; heardAudio = false; firstStart = true; session(); onState('listening'); },
+    stop() { if (!on) return; switchOff(null); },
+    /** Stop hearing for a moment (the agent is talking). */
+    pause() { if (!on || paused) return; paused = true; halt(); onState('paused'); },
+    resume() { if (!on || !paused) return; paused = false; session(); onState('listening'); },
   };
 }

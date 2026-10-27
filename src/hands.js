@@ -28,6 +28,7 @@ export function createHands(doc = document, { speed = 1 } = {}) {
 
   function visible(e) { return e && e.getClientRects().length > 0; }
   function pick(sel) {
+    if (sel && typeof sel !== 'string') return sel.isConnected && visible(sel) ? sel : null; // an element
     const all = [...doc.querySelectorAll(sel)].filter(visible);
     if (all.length <= 1) return all[0] || null;
     // Prefer one not covered by a popup, else the last (popups render last).

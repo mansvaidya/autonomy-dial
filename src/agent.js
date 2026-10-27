@@ -43,6 +43,8 @@ const MAX_NUDGES_PER_STEP = 2;
 // (after a short wait time, or sooner if the person seems unsure), 'unsure'
 // (only when the person seems unsure, asks, or gets stuck).
 export const POINTING = ['now', 'wait', 'unsure'];
+// Wait time before pointing: first time, done it before, know it well.
+const WAIT_MS = [7000, 10000, 14000];
 const SIGNAL_WEIGHT = { 'empty-click': 1, 'other-control': 0.5, wander: 1, 'scroll-hunt': 1 };
 const clamp = (n, a, b) => Math.min(b, Math.max(a, Math.round(Number(n) || a)));
 
@@ -107,7 +109,7 @@ export function parseUtterance(raw) {
  * @param {number} [opts.timesCompleted]
  * @param {number} [opts.stuckAfterMs]
  */
-export function createAgent({ lesson, autonomy = 2, familiarity = null, tone = 'auto', timesCompleted = 0, stuckAfterMs = 25000, pointing = 'auto' } = {}) {
+export function createAgent({ lesson, autonomy = 2, familiarity = null, tone = 'auto', timesCompleted = 0, stuckAfterMs = 35000, pointing = 'auto' } = {}) {
   if (!lesson || !Array.isArray(lesson.steps) || !lesson.steps.length) throw new Error('createAgent: a lesson with steps is required');
   const voice = createVoice(tone);
   const steps = lesson.steps;
@@ -167,7 +169,10 @@ export function createAgent({ lesson, autonomy = 2, familiarity = null, tone = '
       familiarity: famLevel(), awaiting: pending ? pending.type : null, pointing: pointMode(), reveal,
     };
   };
-  const waitMs = () => [4000, 6000, 9000][famLevel()] * (pointOverride ? 1 : policy.waitScale);
+  const waitMs = () => WAIT_MS[famLevel()] * (pointOverride ? 1 : policy.waitScale);
+  // A calm pause before the next instruction, after the person finishes a step,
+  // so the agent doesn't jump straight in (longest at Teacher).
+  const pauseMs = () => (policy.band === 'teacher' ? 2600 : policy.band === 'helper' ? 1600 : 0) * (famLevel() === 2 ? 0.6 : 1);
   const touch = (now) => { if (typeof now === 'number') lastActivity = now; };
   const viewOk = (s, st) => !s.view || (Array.isArray(s.view) ? s.view.includes(st.view) : st.view === s.view);
   const join = (...parts) => parts.filter(Boolean).join(' ');
@@ -314,7 +319,7 @@ export function createAgent({ lesson, autonomy = 2, familiarity = null, tone = '
       if (!w) return null;
       unsure += w;
       const s = current();
-      if (!revealed && unsure >= 2) { unsure = 0; touch(now); return turn(voice.showWhere(), show(0, `unsure:${kind}`)); }
+      if (!revealed && unsure >= (policy.band === 'teacher' ? 3 : 2)) { unsure = 0; touch(now); return turn(voice.showWhere(), show(0, `unsure:${kind}`)); }
       if (revealed && unsure >= 3 && nudges < MAX_NUDGES_PER_STEP) {
         unsure = 0; nudges += 1; touch(now);
         // Teacher responds by teaching; Helper (and Teacher 3) offer to do the step.
@@ -370,8 +375,12 @@ export function createAgent({ lesson, autonomy = 2, familiarity = null, tone = '
       const moved = advanceFrom(state, 'person');
       if (moved > 0) {
         if (ix >= steps.length) { const f = finish(); return warn ? { ...f, say: join(warn, f.say) } : f; }
-        const praise = lastActor === 'person' && !wasActing ? voice.praise() : '';
-        return enter(join(warn, praise), now);
+        const byPerson = lastActor === 'person' && !wasActing;
+        const praise = byPerson ? voice.praise() : '';
+        const next = enter(join(warn, praise), now);
+        // Give the person a moment after finishing a step before the next one.
+        if (byPerson && !next.act && pauseMs()) { next.delay = pauseMs(); stepStart += pauseMs(); lastActivity += pauseMs(); }
+        return next;
       }
       if (wasActing) return warn ? turn(warn) : null; // the agent is mid-action; wait for it
       const s = current();

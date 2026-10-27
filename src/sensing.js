@@ -20,9 +20,13 @@ export function createSensor(root, { getTarget, onSignal }) {
   let scrollDir = 0;
   let reversals = [];
 
+  // getTarget() returns a selector, an element, '*' (a step is in progress
+  // but its target isn't known, e.g. the AI agent hasn't pointed yet), or null.
   function inTarget(el) {
     const sel = getTarget();
     if (!sel) return null; // no step to compare against
+    if (sel === '*') return 'unknown';
+    if (typeof sel !== 'string') return sel.contains(el);
     try { return [...doc.querySelectorAll(sel)].some((t) => t.contains(el)); } catch { return null; }
   }
 
@@ -31,10 +35,11 @@ export function createSensor(root, { getTarget, onSignal }) {
     lastClick = Date.now();
     path = [];
     const hit = inTarget(e.target);
-    if (hit === null || hit) return;
+    if (hit === null || hit === true) return;
     const control = e.target.closest(CLICKABLE);
     // Typing into a field, or clicking the panel's own inputs, isn't hunting.
     if (control && control.matches('input, textarea, select')) return;
+    if (hit === 'unknown' && control) return; // can't tell right from wrong control
     onSignal(control ? 'other-control' : 'empty-click');
   }
 

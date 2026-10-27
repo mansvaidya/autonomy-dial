@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Printable Test Card</title>
+<style>
+  :root { --ink: #1b1640; --muted: #5c587a; --bg: #f4f3fa; --card: #ffffff; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 1.5rem; margin: 0 0 6px; }
+  .note { color: var(--muted); margin: 0 0 18px; }
+  .sheet { display: flex; flex-wrap: wrap; gap: 24px; justify-content: center; }
+  .side { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .side small { color: var(--muted); }
+  /* Real card size: ISO/IEC 7810 ID-1, 85.6 × 53.98 mm */
+  .card { width: 85.6mm; height: 53.98mm; border-radius: 3.2mm; position: relative; overflow: hidden; color: #fff;
+    background: linear-gradient(135deg, #3a2bb8 0%, #4f3bd9 45%, #7a63ff 100%); box-shadow: 0 4px 16px rgba(0,0,0,.18);
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  .card::after { content: ""; position: absolute; inset: 0; border: .3mm dashed rgba(255,255,255,.35); border-radius: 3.2mm; pointer-events: none; }
+  .bank { position: absolute; top: 4mm; left: 5mm; font: 700 3.6mm/1 system-ui, sans-serif; letter-spacing: .2mm; }
+  .stamp { position: absolute; top: 3.6mm; right: 4mm; font: 800 2.4mm/1.1 system-ui, sans-serif; background: #ffcf4a; color: #3b2a00; padding: 1mm 1.6mm; border-radius: 1mm; text-align: center; }
+  .chip { position: absolute; top: 15mm; left: 6mm; width: 10mm; height: 7.6mm; border-radius: 1.4mm; background: linear-gradient(135deg, #f2d58a, #c9a34a); }
+  .chip::before { content: ""; position: absolute; inset: 1.6mm 0; border-top: .25mm solid rgba(0,0,0,.25); border-bottom: .25mm solid rgba(0,0,0,.25); }
+  .num { position: absolute; top: 27mm; left: 6mm; font-size: 5mm; letter-spacing: .6mm; font-weight: 700; white-space: nowrap; }
+  .row { position: absolute; bottom: 5mm; left: 6mm; right: 6mm; display: flex; justify-content: space-between; align-items: flex-end; }
+  .lbl { display: block; font: 600 1.9mm/1 system-ui, sans-serif; opacity: .8; text-transform: uppercase; letter-spacing: .2mm; margin-bottom: .8mm; }
+  .val { font-size: 3.6mm; font-weight: 700; letter-spacing: .3mm; }
+  .back { background: linear-gradient(135deg, #2e2290, #4f3bd9); }
+  .stripe { position: absolute; top: 5mm; left: 0; right: 0; height: 10mm; background: #111; }
+  .sig { position: absolute; top: 19mm; left: 5mm; width: 54mm; height: 8mm; background: repeating-linear-gradient(-45deg, #fff, #fff 1.4mm, #e9e6ff 1.4mm, #e9e6ff 2.8mm); border-radius: .6mm; }
+  .cvc { position: absolute; top: 19mm; left: 61mm; width: 18mm; height: 8mm; background: #fff; color: #111; border-radius: .6mm; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .cvc .lbl { color: #555; opacity: 1; margin: 0 0 .4mm; }
+  .cvc .val { font-size: 4mm; }
+  .fine { position: absolute; bottom: 4mm; left: 5mm; right: 5mm; font: 2.3mm/1.35 system-ui, sans-serif; opacity: .95; }
+  .actions { margin: 20px 0; display: flex; gap: 12px; justify-content: center; }
+  button { font: inherit; font-weight: 700; border: 0; border-radius: 999px; padding: 10px 20px; background: #4f3bd9; color: #fff; cursor: pointer; }
+  .howto { background: var(--card); border-radius: 14px; padding: 16px 20px; margin-top: 8px; }
+  .howto li { margin: 4px 0; }
+  @media print {
+    body { background: #fff; }
+    .noprint { display: none !important; }
+    main { padding: 10mm; }
+    .card { box-shadow: none; }
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --ink: #ecebff; --muted: #a9a6c8; --bg: #15122b; --card: #211d3d; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div class="noprint">
+    <h1>Printable test card</h1>
+    <p class="note">For study sessions with the Basketly demo. Print at 100% (actual size) and cut along the dashed lines. The demo shop accepts only this card; it is not a real card and can't pay for anything.</p>
+  </div>
+
+  <div class="sheet">
+    <div class="side">
+      <div class="card" role="img" aria-label="Test card front. Demo Bank. Card number 4242 4242 4242 4242. Name Alex Morgan. Expires 12/30.">
+        <div class="bank">Demo Bank</div>
+        <div class="stamp">TEST CARD<br>NOT REAL</div>
+        <div class="chip"></div>
+        <div class="num">4242 4242 4242 4242</div>
+        <div class="row">
+          <div><span class="lbl">Name on card</span><span class="val">ALEX MORGAN</span></div>
+          <div><span class="lbl">Expires</span><span class="val">12/30</span></div>
+        </div>
+      </div>
+      <small>Front</small>
+    </div>
+    <div class="side">
+      <div class="card back" role="img" aria-label="Test card back. Security code 123. For research demo only.">
+        <div class="stripe"></div>
+        <div class="sig"></div>
+        <div class="cvc"><span class="lbl">CVC</span><span class="val">123</span></div>
+        <div class="fine">TEST CARD — NOT A REAL CARD — FOR RESEARCH DEMO ONLY.<br>Works only on the Basketly study demo. Never type a real card into the demo.</div>
+      </div>
+      <small>Back</small>
+    </div>
+  </div>
+
+  <div class="actions noprint"><button type="button" onclick="window.print()">Print this card</button></div>
+
+  <section class="howto noprint" aria-labelledby="howto">
+    <h2 id="howto" style="font-size:1.1rem;margin:0 0 6px">What participants type at checkout</h2>
+    <ol>
+      <li><strong>Name on card:</strong> ALEX MORGAN</li>
+      <li><strong>Card number:</strong> 4242 4242 4242 4242</li>
+      <li><strong>Expiry (MM/YY):</strong> 12/30</li>
+      <li><strong>Security code (CVC):</strong> 123, on the back</li>
+    </ol>
+    <p class="note" style="margin:0">Card details stay in the page's boxes. The shop keeps only whether the test card was entered, and the agent and the session log never see the digits.</p>
+  </section>
+</main>
+</body>
+</html>

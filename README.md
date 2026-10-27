@@ -15,12 +15,34 @@ guidelines DG1–DG3. It follows the design of the Controller in the
 > **Status:** research prototype. There are two tasks, each on its own
 > fictional website:
 > - **Order a birthday cake** on **Basketly**, a grocery delivery marketplace
->   (the paper's persona demo task).
+>   (the paper's persona demo task). The granddaughter has a nut allergy, so the
+>   16 steps include filtering for nut-free cakes, reading the details, checking
+>   the allergens and the reviews, and paying with a printed test card.
 > - **Plan a party menu** on **Platewise**, a recipe and party-planning site
 >   (the paper's Information Management scenario: 10 guests, 2 vegetarian,
 >   1 nut allergy, $250, then a shopping list that goes to Basketly).
 >
 > Nothing is bought, no payment is taken, and nothing leaves the page.
+
+## The printed test card
+
+Open **`test-card.html`** (for example http://localhost:4100/test-card.html),
+print it at 100% and cut it out. It's a credit-card-sized card from the
+fictional "Demo Bank", marked **TEST CARD, NOT A REAL CARD**:
+
+| Field | Value |
+|---|---|
+| Name on card | ALEX MORGAN |
+| Card number | 4242 4242 4242 4242 |
+| Expiry | 12/30 |
+| Security code (CVC) | 123 |
+
+The checkout accepts only this card (`src/payment.js`). It checks the number
+(Luhn), the expiry and the code, and anything else gets "This demo only
+accepts the printed test card." The card digits stay in the page's boxes: the
+shop keeps only "test card accepted: yes/no", and the agent, the AI outline and
+the session log never see them. The card fields are private steps, so the agent
+never types them at any dial setting.
 
 ## Try it
 
@@ -28,7 +50,8 @@ No install or build step. Serve the folder and open it in Chrome or Edge, which
 support voice input:
 
 ```bash
-python3 -m http.server 4100 --bind 127.0.0.1
+node server.js                                   # needs Node 18+; also enables the AI agent
+# or, scripted agent only:  python3 -m http.server 4100 --bind 127.0.0.1
 # open http://localhost:4100
 ```
 
@@ -40,6 +63,11 @@ the browser drops its cached copy.
 Pick a task, set the dials, and say or type what you want. Typing works
 everywhere the mic does.
 
+**Voice is a switch.** Click **Voice: off** once to turn it on; it then keeps
+listening (hands-free) until you click **Voice: on** to turn it off. It pauses
+while the agent is speaking, so it doesn't hear itself, and the setting is
+remembered after a reload (Chrome may ask for the mic again).
+
 URL options for study sessions:
 
 | Option | Effect |
@@ -48,12 +76,57 @@ URL options for study sessions:
 | `?autonomy=1..9` | Starting autonomy (default 2, Teacher) |
 | `?familiarity=0\|1\|2` | First time / done it before / know it well (default: from history) |
 | `?tone=auto\|warm\|neutral\|minimal` | Starting tone (default `auto`, which follows the dial) |
-| `?stuck=25` | Seconds of no activity before a gentle nudge |
+| `?stuck=35` | Seconds of no activity before a gentle nudge (default 35) |
 | `?speed=1` | How fast the agent's hands move (lower is faster) |
 | `?fresh=1` | Ignore past completions |
 
-**Settings (⚙) → Download session log** saves a JSON log: what was said, each
+The agent's words appear in the panel as they're spoken, and what you say
+shows live while the mic listens. The **›** button in the panel header hides
+the panel; a small dock in the corner keeps the mic and shows what the agent
+is saying, and **Voice agent ‹** brings the panel back (start hidden with
+`?panel=hidden`).
+
+**Settings (⚙) → Download session log** saves a JSON log with a `transcript` (who said what, typed or voice, and when each agent line started and finished being spoken) and the events: what was said, each
 step, highlights, nudges, every dial change and every action the agent took.
+
+## AI agent (optional)
+
+By default the agent is **scripted**: it follows a written lesson. Switch
+**Settings (⚙) → Agent brain** to **AI (Claude)** and a Claude model reads the
+page and decides each step itself, inside the same dial and hand-back rules.
+It's told only the task brief, not the lesson's steps, so you can compare the
+two on the same tasks.
+
+**Setup (once):**
+1. Create an API key at [console.anthropic.com](https://console.anthropic.com).
+2. In this folder, copy `.env.example` to `.env` and paste the key after
+   `ANTHROPIC_API_KEY=`.
+3. Start the demo with `node server.js` (instead of the Python server) and open
+   http://localhost:4100. The terminal says "AI agent: on".
+
+The key stays on your computer: the browser talks to `server.js`, which adds
+the key and forwards the request to Anthropic. `.env` is never uploaded or
+served. The AI agent doesn't work on GitHub Pages (there's no server there);
+the scripted agent does.
+
+**How the dial limits the AI.** The AI can act only through tools, and the dial
+decides which it gets:
+
+| Dial | Tools |
+|---|---|
+| Teacher 1–2 | `say`, `highlight`, `wait` (it can't act) |
+| Teacher 3, Helper 4–6 | adds `click`, `type`, `scroll`, but they're refused unless the person has just asked for help or said yes |
+| Autopilot 7–9 | `click`, `type`, `scroll` freely |
+| Always | `PRIVATE` fields and `FINAL DECISION` buttons are refused, in code |
+
+It reads the page as a numbered outline of controls (`src/ai/pagesnap.js`).
+Private fields show only whether they're filled, never what was typed.
+Page text is passed as data, not instructions. Wait time, uncertainty
+signals and "no progress" reach it as events, so the built-in teaching
+behavior carries over.
+
+**For the study,** the session log adds every model call (latency and tokens),
+every tool call, every refusal, and the model name.
 
 ## The autonomy dial
 
@@ -91,8 +164,11 @@ clicks on the wrong control, the pointer roaming without clicking, and
 scrolling back and forth (`sensing.js`; it never reads what's typed).
 
 - **Teacher** speaks the step but waits before pointing, so the person can try
-  from the words alone: about 4 seconds the first time, 6 if they've done it
-  before, 9 if they know it well (half that at level 1). Signs of uncertainty
+  from the words alone: about 7 seconds the first time, 10 if they've done it
+  before, 14 if they know it well (half that at level 1). After the person
+  finishes a step, it pauses a couple of seconds before giving the next one,
+  and it nudges only after about 35 seconds without progress. It needs three
+  signs of uncertainty before pointing early. Signs of uncertainty
   make it point sooner ("Here, let me show you where"); more signs bring a
   hint.
 - **Helper** stays quiet and only points once the person seems unsure. More
@@ -126,6 +202,10 @@ depend on tone.
   picks up choices you gave up front ("a 10 inch cake, tomorrow afternoon") and
   asks for the rest. It suggests dishes with reasons and accepts "yes", another
   dish's name, or "I'll do it".
+- **Cake extras.** If the person opens a cake with nuts and checks its
+  allergens, or puts one in the cart, the agent warns them and the step
+  doesn't count until a nut-free cake is chosen (hazelnut torte, German
+  chocolate, opera, carrot walnut, pistachio and Lane cake all contain nuts).
 - **Party menu extras.** If a dish with nuts goes on the menu, the agent warns
   you (pesto, peanut noodles, Waldorf salad, carrot cake and baklava all contain
   nuts). It also warns if the menu goes over budget. A vegetarian main counts
@@ -145,9 +225,15 @@ src/persona.js                wording per tone and per band
 src/guide.js                  the highlight overlay (points only)
 src/hands.js                  the agent's hands; refuses private and commit controls
 src/sensing.js                uncertainty signals from clicks, pointer and scrolling
+src/ai/ai-agent.js            the AI agent: Claude with dial-limited tools
+src/ai/pagesnap.js            the page as a numbered outline for the AI
+server.js                     local server: serves the demo, holds the API key
+.env.example                  where your API key goes (copy to .env)
 src/lessons/birthday-cake.js  cake lesson: steps, kinds, hints, how the agent does each
 src/lessons/party-menu.js     party-menu lesson
-src/shop.js, src/catalog.js   Basketly and its products
+src/shop.js, src/catalog.js   Basketly and its products (about 30 cakes and desserts, with allergens)
+src/payment.js                the test-card check (only the printed card is accepted)
+test-card.html                the printable test card for participants
 src/platewise.js, src/recipes.js  Platewise and its recipes
 src/panel.js                  the panel: transcript, mic, dials, settings
 src/voice.js                  speech in and out (Web Speech API)

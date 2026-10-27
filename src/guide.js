@@ -31,7 +31,7 @@ export function createGuide(doc = document) {
   function place() {
     raf = 0;
     if (!spec) { box.hidden = true; edge.hidden = true; return { found: false, visible: false }; }
-    const el = pickTarget(spec.target);
+    const el = typeof spec.target === 'string' ? pickTarget(spec.target) : (spec.target && spec.target.isConnected ? spec.target : null);
     if (!el) { box.hidden = true; edge.hidden = true; return { found: false, visible: false }; }
     const r = el.getBoundingClientRect();
     // Visible area = the nearest scrolling pane (the shop), not the window, so

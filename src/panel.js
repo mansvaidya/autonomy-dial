@@ -36,16 +36,28 @@ const HANDBACK = 'At every setting, you type private details and make the final 
 
 const clock = () => new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
 
-export function createPanel(root, { canListen, canSpeak, tone, autonomy, familiarity, onSubmit, onMic, onRestart, onEnd, onTone, onSpeech, onDownload, onStart, onAutonomy, onFamiliarity, onChangeTask, onTestVoice = () => {} }) {
+export function createPanel(root, { canListen, canSpeak, tone, autonomy, familiarity, onSubmit, onMic, onRestart, onEnd, onTone, onSpeech, onDownload, onStart, onAutonomy, onFamiliarity, onChangeTask, onTestVoice = () => {}, onBrain = () => {}, onCollapse = () => {} }) {
   root.innerHTML = `
     <header class="agent-head">
       <span class="agent-icon" data-band="teacher">${ICONS.teacher}</span>
       <div class="agent-title"><div class="agent-name">Voice Agent</div><div class="agent-role">${ROLE.teacher}</div></div>
+      <span class="ai-badge" hidden title="Running on an AI model">AI</span>
       <span class="live" aria-label="Session live">LIVE</span>
+      <button type="button" class="collapse" aria-label="Hide the voice agent" title="Hide the voice agent"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M9 6l6 6-6 6"/></svg></button>
       <button type="button" class="gear" aria-label="Settings" aria-expanded="false" aria-controls="agent-settings"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 0-2l2-1.6a.5.5 0 0 0 .1-.6l-1.9-3.3a.5.5 0 0 0-.6-.2l-2.4 1a7.3 7.3 0 0 0-1.7-1l-.4-2.5a.5.5 0 0 0-.5-.4h-3.8a.5.5 0 0 0-.5.4l-.4 2.5a7.3 7.3 0 0 0-1.7 1l-2.4-1a.5.5 0 0 0-.6.2L2.5 8.8a.5.5 0 0 0 .1.6l2 1.6a7.6 7.6 0 0 0 0 2l-2 1.6a.5.5 0 0 0-.1.6l1.9 3.3c.1.2.4.3.6.2l2.4-1c.5.4 1.1.7 1.7 1l.4 2.5c0 .2.3.4.5.4h3.8c.2 0 .5-.2.5-.4l.4-2.5c.6-.3 1.2-.6 1.7-1l2.4 1c.2.1.5 0 .6-.2l1.9-3.3a.5.5 0 0 0-.1-.6ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z"/></svg></button>
     </header>
     <div class="settings-sheet" id="agent-settings" role="dialog" aria-label="Settings" hidden>
     <div class="sheet-head"><h2>Settings</h2><button type="button" class="sheet-close" aria-label="Close settings">✕</button></div>
+    <section class="dials brain-dial" aria-label="Agent brain">
+      <div class="dial">
+        <div class="dial-label" id="dl-brain">Agent brain</div>
+        <div class="stops two" role="radiogroup" aria-labelledby="dl-brain">
+          <button role="radio" class="stop" data-brain="scripted">Scripted</button>
+          <button role="radio" class="stop" data-brain="ai">AI (Claude)</button>
+        </div>
+        <p class="dial-help brain-help">Scripted follows a written lesson. AI reads the page and decides each step itself, within the same dial and hand-back rules.</p>
+      </div>
+    </section>
     <section class="dials" aria-label="How the agent helps">
       <div class="dial">
         <div class="dial-label" id="dl-auto">Who does the steps?</div>
@@ -90,7 +102,7 @@ export function createPanel(root, { canListen, canSpeak, tone, autonomy, familia
     </form>
     <div class="controls">
       <button type="button" class="mic" aria-pressed="false" ${canListen ? '' : 'disabled title="Voice input is not supported in this browser"'}>
-        <span aria-hidden="true">🎙</span> <span class="mic-label">${canListen ? 'Tap to talk' : 'No mic'}</span></button>
+        <span aria-hidden="true">🎙</span> <span class="mic-label">${canListen ? 'Voice: off' : 'No mic'}</span></button>
       <button type="button" class="secondary restart">Restart</button>
       <button type="button" class="danger end">End</button>
     </div>`;
@@ -106,7 +118,7 @@ export function createPanel(root, { canListen, canSpeak, tone, autonomy, familia
     const band = bandOf(level);
     range.value = String(level);
     $('.auto-num').textContent = String(level);
-    root.querySelectorAll('.stops:not(.fam) .stop').forEach((b) => {
+    root.querySelectorAll('.stops:not(.fam):not(.two) .stop').forEach((b) => {
       const on = b.dataset.band === band;
       b.classList.toggle('on', on);
       b.setAttribute('aria-checked', String(on));
@@ -126,7 +138,8 @@ export function createPanel(root, { canListen, canSpeak, tone, autonomy, familia
     });
   }
 
-  root.querySelectorAll('.stops:not(.fam) .stop').forEach((b) => b.addEventListener('click', () => { showAutonomy(Number(b.dataset.level)); onAutonomy(Number(b.dataset.level)); }));
+  root.querySelectorAll('[data-brain]').forEach((b) => b.addEventListener('click', () => onBrain(b.dataset.brain)));
+  root.querySelectorAll('.stops:not(.fam):not(.two) .stop').forEach((b) => b.addEventListener('click', () => { showAutonomy(Number(b.dataset.level)); onAutonomy(Number(b.dataset.level)); }));
   range.addEventListener('input', () => showAutonomy(Number(range.value)));
   range.addEventListener('change', () => onAutonomy(Number(range.value)));
   root.querySelectorAll('.stops.fam .stop').forEach((b) => b.addEventListener('click', () => { showFamiliarity(Number(b.dataset.fam)); onFamiliarity(Number(b.dataset.fam)); }));
@@ -140,6 +153,63 @@ export function createPanel(root, { canListen, canSpeak, tone, autonomy, familia
     m.querySelector('.bubble').textContent = text;
     log.append(m);
     log.scrollTop = log.scrollHeight;
+    return m;
+  }
+
+  // A line whose words appear as the voice speaks them. Screen readers get the
+  // whole line at once (sr-only copy); the visible words fill in.
+  function addSpoken(role, text) {
+    const m = add(role, '');
+    const b = m.querySelector('.bubble');
+    const words = text.split(/(\s+)/);
+    b.innerHTML = '<span class="sr-only"></span><span class="said" aria-hidden="true"></span><span class="unsaid" aria-hidden="true"></span>';
+    b.querySelector('.sr-only').textContent = text;
+    const said = b.querySelector('.said'), unsaid = b.querySelector('.unsaid');
+    let shown = -1;
+    const reveal = (frac) => {
+      const n = Math.max(0, Math.min(words.length, Math.ceil(frac * words.length)));
+      if (n === shown) return;
+      shown = n;
+      said.textContent = words.slice(0, n).join('');
+      unsaid.textContent = words.slice(n).join('');
+      if (dockCaption) dockCaption.textContent = said.textContent;
+    };
+    reveal(0);
+    m.classList.add('speaking-now');
+    return { reveal, done() { reveal(1); m.classList.remove('speaking-now'); } };
+  }
+
+  // What the person is saying, shown live while the mic listens.
+  let liveUser = null;
+  function setLiveUser(text) {
+    if (!text) { if (liveUser) { liveUser.remove(); liveUser = null; } return; }
+    if (!liveUser) { liveUser = add('user', ''); liveUser.classList.add('live-user'); }
+    liveUser.querySelector('.bubble').textContent = text;
+    log.scrollTop = log.scrollHeight;
+  }
+  function finishLiveUser(text) {
+    if (liveUser) { liveUser.classList.remove('live-user'); liveUser.querySelector('.bubble').textContent = text; const m = liveUser; liveUser = null; return m; }
+    return add('user', text);
+  }
+
+  // Collapsing: the panel hides and a small dock stays in the corner, with the
+  // mic, the agent's current words, and a button to bring the panel back.
+  const doc = root.ownerDocument;
+  const dock = doc.createElement('div');
+  dock.className = 'agent-dock';
+  dock.hidden = true;
+  dock.innerHTML = `<div class="dock-caption" aria-live="polite"></div>
+    <div class="dock-row"><button type="button" class="dock-mic" ${canListen ? '' : 'disabled'} aria-label="Talk to the voice agent">🎙</button>
+    <button type="button" class="dock-open" aria-label="Show the voice agent"><span class="dock-dot" aria-hidden="true"></span> Voice agent <span aria-hidden="true">‹</span></button></div>`;
+  doc.body.append(dock);
+  const dockCaption = dock.querySelector('.dock-caption');
+  let captionTimer = 0;
+  function collapse(on) {
+    doc.body.classList.toggle('agent-collapsed', on);
+    root.hidden = on;
+    dock.hidden = !on;
+    onCollapse(on);
+    (on ? dock.querySelector('.dock-open') : $('.collapse')).focus({ preventScroll: true });
   }
 
   $('.composer').addEventListener('submit', (e) => {
@@ -160,6 +230,9 @@ export function createPanel(root, { canListen, canSpeak, tone, autonomy, familia
   $('.rate').addEventListener('input', (e) => onSpeech({ rate: Number(e.target.value) }));
   $('.download').addEventListener('click', () => onDownload());
   $('.test-voice').addEventListener('click', () => onTestVoice());
+  $('.collapse').addEventListener('click', () => collapse(true));
+  dock.querySelector('.dock-open').addEventListener('click', () => collapse(false));
+  dock.querySelector('.dock-mic').addEventListener('click', () => onMic(!mic.classList.contains('on')));
   $('.change-task').addEventListener('click', () => { openSettings(false); onChangeTask(); });
 
   // The settings sheet opens from the gear and closes with ✕, Esc or the gear.
@@ -181,6 +254,16 @@ export function createPanel(root, { canListen, canSpeak, tone, autonomy, familia
 
   return {
     add,
+    addSpoken(role, text) {
+      clearTimeout(captionTimer);
+      dock.classList.add('has-caption');
+      const h = addSpoken(role, text);
+      return { reveal: h.reveal, done() { h.done(); captionTimer = setTimeout(() => dock.classList.remove('has-caption'), 6000); } };
+    },
+    setLiveUser,
+    finishLiveUser,
+    collapse,
+    get collapsed() { return root.hidden; },
     clear() { log.innerHTML = ''; },
     /** The empty state for a task (or the picker when task is null). */
     intro(task) {
@@ -196,10 +279,37 @@ export function createPanel(root, { canListen, canSpeak, tone, autonomy, familia
     showAutonomy,
     showFamiliarity,
     setSpeaking(on) { $('.speaking').hidden = !on; },
-    setListening(on) {
+    setThinking(on) {
+      let t = root.querySelector('.thinking');
+      if (!t) { t = root.ownerDocument.createElement('span'); t.className = 'thinking'; t.textContent = 'Thinking…'; $('.status-row').prepend(t); }
+      t.hidden = !on;
+    },
+    setBrain(b) {
+      root.querySelectorAll('[data-brain]').forEach((x) => { const on = x.dataset.brain === b; x.classList.toggle('on', on); x.setAttribute('aria-checked', String(on)); });
+      $('.ai-badge').hidden = b !== 'ai';
+    },
+    setBrainAvailable(ok, model) {
+      const btn = root.querySelector('[data-brain="ai"]');
+      btn.classList.toggle('unavailable', !ok);
+      $('.brain-help').textContent = ok
+        ? `Scripted follows a written lesson. AI (${model}) reads the page and decides each step itself, within the same dial and hand-back rules.`
+        : 'AI needs the local server with a Claude API key (see "AI agent" in the README). Scripted works everywhere.';
+    },
+    /** Voice input on/off (hands-free). `paused` while the agent is talking. */
+    setListening(on, paused = false) {
+      dock.querySelector('.dock-mic').classList.toggle('on', on);
       mic.classList.toggle('on', on);
+      mic.classList.toggle('paused', on && paused);
       mic.setAttribute('aria-pressed', String(on));
-      $('.mic-label').textContent = on ? 'Listening… tap to stop' : 'Tap to talk';
+      $('.mic-label').textContent = on ? (paused ? 'Voice: on (waiting)' : 'Voice: on · listening') : 'Voice: off';
+      mic.title = on ? 'Tap to turn voice off' : 'Tap to turn voice on: then just talk, no need to tap again';
+      if (!on) setLiveUser('');
+    },
+    /** Browsers need a tap before the mic can start, so after a reload we ask. */
+    offerVoiceResume() {
+      const m = add('system', '');
+      m.querySelector('.bubble').innerHTML = 'Voice was on last time. <button type="button" class="link resume-voice">Turn voice on</button>';
+      m.querySelector('.resume-voice').addEventListener('click', () => { onMic(true); m.remove(); });
     },
     setHeard(text) { const h = $('.heard'); h.hidden = !text; h.textContent = text ? `“${text}”` : ''; },
     setLive(state) { const l = $('.live'); l.classList.toggle('off', state !== 'live'); l.textContent = { live: 'LIVE', done: 'DONE', ended: 'ENDED' }[state] || 'LIVE'; },
