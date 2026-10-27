@@ -20,6 +20,7 @@ import { createPlatewise } from './platewise.js';
 import { createGuide } from './guide.js';
 import { createHands, HandBackError } from './hands.js';
 import { createPanel } from './panel.js';
+import { createSensor } from './sensing.js';
 import { createSpeaker, createListener, canListen, canSpeak, LISTEN_ERRORS } from './voice.js';
 import { birthdayCake } from './lessons/birthday-cake.js';
 import { partyMenu } from './lessons/party-menu.js';
@@ -165,6 +166,16 @@ function openBasketlyWithList(items) {
   record('open-basketly', { items: items.length });
 }
 
+// Built-in uncertainty sensing (wait time near Teacher, quiet help near Helper).
+createSensor(shopEl, {
+  getTarget: () => (agent && !driving ? agent.currentTarget() : null),
+  onSignal: (kind) => {
+    if (!agent || driving) return;
+    record('signal', { kind, step: agent.step && agent.step.id, revealed: agent.revealed });
+    deliver(agent.signal(kind, Date.now()));
+  },
+});
+
 // Any sign the person is working counts as activity, so nudges wait.
 for (const ev of ['input', 'pointerdown', 'keydown', 'wheel']) {
   shopEl.addEventListener(ev, (e) => { if (agent && e.isTrusted) agent.activity(Date.now()); }, { passive: true });
@@ -191,6 +202,7 @@ function userSaid(text, via) {
 function deliver(turn) {
   if (!turn) return;
   const where = guide.highlight(turn.highlight);
+  if (turn.reveal) record('reveal', { reason: turn.reveal, step: turn.stepIndex });
   let say = turn.say;
   // Off screen? Ask the person to scroll (only for steps they do).
   if (say && !turn.act && where.found && where.direction && scrollHintedStep !== turn.stepIndex) {

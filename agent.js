@@ -39,6 +39,11 @@ import { createVoice } from './persona.js';
 export const STOPS = { teacher: 2, helper: 5, autopilot: 8 };
 export const FAMILIARITY = ['First time', 'Done it before', 'Know it well'];
 const MAX_NUDGES_PER_STEP = 2;
+// When to point at the target: 'now' (as soon as the step is given), 'wait'
+// (after a short wait time, or sooner if the person seems unsure), 'unsure'
+// (only when the person seems unsure, asks, or gets stuck).
+export const POINTING = ['now', 'wait', 'unsure'];
+const SIGNAL_WEIGHT = { 'empty-click': 1, 'other-control': 0.5, wander: 1, 'scroll-hunt': 1 };
 const clamp = (n, a, b) => Math.min(b, Math.max(a, Math.round(Number(n) || a)));
 
 export function bandOf(level) { return level <= 3 ? 'teacher' : level <= 6 ? 'helper' : 'autopilot'; }
@@ -62,6 +67,13 @@ export function policyFor(level) {
     honorsAct: L >= 3,
     autoChoose: L >= 9,
     extraGuidance: L === 1,
+    // Built-in wait time and uncertainty sensing (see signal()):
+    //   Teacher waits a few seconds so you can try first, sooner if you seem
+    //   unsure, then teaches; Helper stays quiet and only points when you seem
+    //   unsure, then offers to do the step; Autopilot points right away (the
+    //   person's steps there are hand-backs).
+    pointing: L <= 4 ? 'wait' : L <= 6 ? 'unsure' : 'now',
+    waitScale: L === 1 ? 0.5 : L === 4 ? 1.5 : 1,
   };
 }
 
@@ -95,7 +107,7 @@ export function parseUtterance(raw) {
  * @param {number} [opts.timesCompleted]
  * @param {number} [opts.stuckAfterMs]
  */
-export function createAgent({ lesson, autonomy = 2, familiarity = null, tone = 'auto', timesCompleted = 0, stuckAfterMs = 25000 } = {}) {
+export function createAgent({ lesson, autonomy = 2, familiarity = null, tone = 'auto', timesCompleted = 0, stuckAfterMs = 25000, pointing = 'auto' } = {}) {
   if (!lesson || !Array.isArray(lesson.steps) || !lesson.steps.length) throw new Error('createAgent: a lesson with steps is required');
   const voice = createVoice(tone);
   const steps = lesson.steps;
@@ -118,6 +130,14 @@ export function createAgent({ lesson, autonomy = 2, familiarity = null, tone = '
   const doneBy = new Map();    // step index → 'person' | 'agent'
   const prefill = {};          // choices given up front ("a 10 inch cake")
   const watched = new Set();
+  // Wait time: whether the current step's target is shown yet.
+  const pointOverride = POINTING.includes(pointing) ? pointing : null; // 'auto' follows the dial
+  const pointMode = () => pointOverride || policy.pointing;
+  let revealed = true;
+  let revealNote = null;      // why it was just shown, for the session log (one-shot)
+  let enteredIx = -1;
+  let stepStart = 0;
+  let unsure = 0;             // accumulated signs of uncertainty on this step
 
   const current = () => steps[ix] || null;
   const famLevel = () => (fam == null ? 0 : fam);
@@ -132,17 +152,27 @@ export function createAgent({ lesson, autonomy = 2, familiarity = null, tone = '
     if (!s || phase !== 'active') return null;
     if (offTrack && s.view && appState && !viewOk(s, appState)) return s.getBackTarget ? { target: s.getBackTarget, level: 1 } : null;
     if (pending && pending.type === 'acting') return { target: targetOf(s), level: 'agent' };
+    if (!revealed) return null; // wait time: let the person try first
     return { target: targetOf(s), level };
   }
-  const turn = (say, highlight = hl(), act = null) => ({
-    say: say || null, highlight, act, phase, stepIndex: ix, band: policy.band, level: policy.level, tone: voice.effectiveTone,
-    familiarity: famLevel(), awaiting: pending ? pending.type : null,
-  });
+  // Show the target now (the person asked, got stuck, or seems unsure).
+  function show(level, why) {
+    if (!revealed) { revealed = true; revealNote = why; }
+    return hl(level);
+  }
+  const turn = (say, highlight = hl(), act = null) => {
+    const reveal = revealNote; revealNote = null;
+    return {
+      say: say || null, highlight, act, phase, stepIndex: ix, band: policy.band, level: policy.level, tone: voice.effectiveTone,
+      familiarity: famLevel(), awaiting: pending ? pending.type : null, pointing: pointMode(), reveal,
+    };
+  };
+  const waitMs = () => [4000, 6000, 9000][famLevel()] * (pointOverride ? 1 : policy.waitScale);
   const touch = (now) => { if (typeof now === 'number') lastActivity = now; };
   const viewOk = (s, st) => !s.view || (Array.isArray(s.view) ? s.view.includes(st.view) : st.view === s.view);
   const join = (...parts) => parts.filter(Boolean).join(' ');
 
-  function resetStep() { hintLevel = 0; nudges = 0; offTrack = false; pending = null; }
+  function resetStep() { hintLevel = 0; nudges = 0; offTrack = false; pending = null; unsure = 0; }
 
   // Begin the current step under the current policy. `prefix` is spoken first.
   function enter(prefix, now) {
@@ -167,8 +197,16 @@ export function createAgent({ lesson, autonomy = 2, familiarity = null, tone = '
       pending = { type: 'offer', ix };
       return turn(join(prefix, voice.offer(s)));
     }
-    // The person's step.
+    // The person's step. Wait time: unless pointing is "right away", the target
+    // stays hidden at first, so the person can try from the spoken instruction.
     pending = null;
+    if (enteredIx !== ix) {
+      enteredIx = ix;
+      stepStart = typeof now === 'number' ? now : lastActivity;
+      unsure = 0;
+      const handBack = (s.kind === 'private' || s.kind === 'commit') && policy.band !== 'teacher';
+      revealed = pointMode() === 'now' || handBack;
+    }
     const yourTurn = lastActor === 'agent' && policy.band !== 'teacher';
     if ((s.kind === 'private' || s.kind === 'commit') && policy.band !== 'teacher') {
       return turn(join(prefix, voice.handBack(s, { short: short() })));
@@ -180,7 +218,7 @@ export function createAgent({ lesson, autonomy = 2, familiarity = null, tone = '
 
   function actNow(prefix, value, { takeover = false } = {}) {
     const s = current();
-    if (s.kind === 'private' || s.kind === 'commit') return turn(join(prefix, voice.declinePrivate(s)), hl(1));
+    if (s.kind === 'private' || s.kind === 'commit') return turn(join(prefix, voice.declinePrivate(s)), show(1, 'asked'));
     pending = { type: 'acting', ix };
     return turn(join(prefix, voice.narrate(s, value, { takeover })), { target: targetOf(s), level: 'agent' }, { stepId: s.id, value: value === undefined ? null : value });
   }
@@ -224,7 +262,7 @@ export function createAgent({ lesson, autonomy = 2, familiarity = null, tone = '
     touch(now);
     const say = voice.hint(s, hintLevel);
     hintLevel = Math.min(hintLevel + 1, 2);
-    return turn(say, hl(Math.max(hintLevel, 1)));
+    return turn(say, show(Math.max(hintLevel, 1), 'hint'));
   }
 
   function watch(state) {
@@ -259,6 +297,32 @@ export function createAgent({ lesson, autonomy = 2, familiarity = null, tone = '
     get awaiting() { return pending ? pending.type : null; },
     get shortMode() { return short(); },
     currentHighlight: () => hl(),
+    /** The current step's target, even while it isn't shown (for sensing). */
+    currentTarget() { const s = current(); return s && phase === 'active' && !pending && owner() === 'user' ? targetOf(s) : null; },
+    get revealed() { return revealed; },
+    get pointing() { return pointMode(); },
+    /**
+     * A sign of uncertainty from the host's sensing (see sensing.js):
+     * 'empty-click' (a click on nothing clickable), 'other-control' (a click on
+     * something other than the target), 'wander' (the pointer roams without
+     * clicking), 'scroll-hunt' (scrolling back and forth).
+     * Enough of them shows the target early; more after that gives a hint.
+     */
+    signal(kind, now) {
+      if (phase !== 'active' || pending || owner() !== 'user') return null;
+      const w = SIGNAL_WEIGHT[kind] || 0;
+      if (!w) return null;
+      unsure += w;
+      const s = current();
+      if (!revealed && unsure >= 2) { unsure = 0; touch(now); return turn(voice.showWhere(), show(0, `unsure:${kind}`)); }
+      if (revealed && unsure >= 3 && nudges < MAX_NUDGES_PER_STEP) {
+        unsure = 0; nudges += 1; touch(now);
+        // Teacher responds by teaching; Helper (and Teacher 3) offer to do the step.
+        if (policy.rescue !== 'teach' && s.kind !== 'private' && s.kind !== 'commit') { assisted = true; pending = { type: 'rescue', ix }; return turn(voice.rescueOffer(s), show(2, 'unsure')); }
+        return hint(now);
+      }
+      return null;
+    },
     activity(now) { touch(now); },
 
     setTone(next) { voice.setTone(next); return turn(null); },
@@ -341,7 +405,7 @@ export function createAgent({ lesson, autonomy = 2, familiarity = null, tone = '
       taken.add(ix);
       pending = null;
       touch(now);
-      return turn(voice.actFailed(current()), hl(1));
+      return turn(voice.actFailed(current()), show(1, 'agent-failed'));
     },
 
     hear(utterance, now) {
@@ -379,7 +443,7 @@ export function createAgent({ lesson, autonomy = 2, familiarity = null, tone = '
       }
 
       if (pending && pending.type === 'ask') {
-        if (intent === 'mine') { pending = null; taken.add(ix); return turn(voice.userTakes(s), hl(0)); }
+        if (intent === 'mine') { pending = null; taken.add(ix); return turn(voice.userTakes(s), show(0, 'asked')); }
         if (intent === 'why') return turn(voice.why(s));
         if (intent === 'stop') { pending = null; phase = 'ended'; return turn(voice.ended(), null); }
         if (intent !== 'repeat' && intent !== 'menu') return answer(utterance, intent, now);
@@ -387,8 +451,8 @@ export function createAgent({ lesson, autonomy = 2, familiarity = null, tone = '
 
       switch (intent) {
         case 'act': {
-          if (s.kind === 'private' || s.kind === 'commit') return turn(voice.declinePrivate(s), hl(1));
-          if (!policy.honorsAct) return turn(voice.declineToAct(s), hl(Math.max(hintLevel, 1)));
+          if (s.kind === 'private' || s.kind === 'commit') return turn(voice.declinePrivate(s), show(1, 'asked'));
+          if (!policy.honorsAct) return turn(voice.declineToAct(s), show(Math.max(hintLevel, 1), 'asked'));
           taken.delete(ix);
           if (s.kind === 'choose') { pending = { type: 'ask', ix }; return turn(typeof s.ask === 'function' ? s.ask(appState || {}) : s.ask, { target: targetOf(s), level: 0 }); }
           return actNow(null, undefined, { takeover: true });
@@ -398,7 +462,7 @@ export function createAgent({ lesson, autonomy = 2, familiarity = null, tone = '
         case 'hint': {
           const own = s.kind !== 'private' && s.kind !== 'commit';
           if (own && policy.rescue === 'take') { assisted = true; if (s.kind === 'choose') { pending = { type: 'ask', ix }; return turn(join('Sure, I can do that.', typeof s.ask === 'function' ? s.ask(appState || {}) : s.ask), { target: targetOf(s), level: 0 }); } return actNow(null, undefined, { takeover: true }); }
-          if (own && policy.rescue === 'offer' && hintLevel >= 1) { pending = { type: 'rescue', ix }; return turn(voice.rescueOffer(s), hl(2)); }
+          if (own && policy.rescue === 'offer' && hintLevel >= 1) { pending = { type: 'rescue', ix }; return turn(voice.rescueOffer(s), show(2, 'stuck')); }
           return hint(now);
         }
         case 'repeat': return pending && pending.type === 'ask' ? turn(typeof s.ask === 'function' ? s.ask(appState || {}) : s.ask) : enter(null, now);
@@ -409,7 +473,7 @@ export function createAgent({ lesson, autonomy = 2, familiarity = null, tone = '
         case 'done': {
           if (appState && holds(s.doneWhen, appState)) return this.observe(appState, now);
           hintLevel = Math.max(hintLevel, 1);
-          return turn(voice.notYet(s), hl(1));
+          return turn(voice.notYet(s), show(1, 'asked'));
         }
         default:
           return turn(`I'm here to help with this. ${voice.step(s, { withWhy: false, short: true })} ${voice.menu(policy.band)}`);
@@ -419,6 +483,8 @@ export function createAgent({ lesson, autonomy = 2, familiarity = null, tone = '
     tick(now) {
       if (phase !== 'active' || typeof now !== 'number') return null;
       if (pending && pending.type === 'acting') return null;
+      // Wait time over: point at the target quietly.
+      if (!revealed && !pending && pointMode() === 'wait' && now - stepStart >= waitMs()) { revealed = true; revealNote = 'wait-time'; return turn(null); }
       const wait = stuckAfterMs * (policy.extraGuidance ? 0.7 : 1) * (famLevel() === 2 ? 1.6 : 1);
       if (now - lastActivity < wait) return null;
       if (nudges >= MAX_NUDGES_PER_STEP) return null;
@@ -429,7 +495,7 @@ export function createAgent({ lesson, autonomy = 2, familiarity = null, tone = '
         return nudges === 1 ? turn(voice.waitingForAnswer(s)) : null;
       }
       const canTakeOver = policy.rescue !== 'teach' && s.kind !== 'private' && s.kind !== 'commit';
-      if (nudges === 1) { hintLevel = Math.max(hintLevel, 1); return turn(voice.stuckCheck(s, { canTakeOver }), hl(1)); }
+      if (nudges === 1) { hintLevel = Math.max(hintLevel, 1); return turn(voice.stuckCheck(s, { canTakeOver }), show(1, 'stuck')); }
       return hint(now);
     },
   };

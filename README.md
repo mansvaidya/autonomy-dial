@@ -85,6 +85,25 @@ controlling the screen" and a ring around the control it's using (the paper's
 Fig. 5 convention), and it narrates each action. You can turn the dial at any
 point; the agent re-describes the current step under the new setting.
 
+**Wait time and uncertainty sensing** (built in, follows the dial). The agent
+watches for signs that the person is unsure: clicks on nothing clickable,
+clicks on the wrong control, the pointer roaming without clicking, and
+scrolling back and forth (`sensing.js`; it never reads what's typed).
+
+- **Teacher** speaks the step but waits before pointing, so the person can try
+  from the words alone: about 4 seconds the first time, 6 if they've done it
+  before, 9 if they know it well (half that at level 1). Signs of uncertainty
+  make it point sooner ("Here, let me show you where"); more signs bring a
+  hint.
+- **Helper** stays quiet and only points once the person seems unsure. More
+  signs bring an offer: "Would you like me to do just this step?"
+- **Autopilot** points right away, since the person's steps there are
+  hand-backs.
+
+Asking "where is it?" or getting stuck always points immediately. Every signal
+and every reveal (and why: wait time, unsure, asked, stuck) goes into the
+session log.
+
 **Familiarity dial.** *First time* gives full instructions with reasons. *Done
 it before* gives full instructions, with reasons only when asked. *Know it well*
 gives short reminders, and nudges wait longer. If you've finished a task before
@@ -125,6 +144,7 @@ src/agent.js                  the engine: dials, steps, hand-back (pure, unit-te
 src/persona.js                wording per tone and per band
 src/guide.js                  the highlight overlay (points only)
 src/hands.js                  the agent's hands; refuses private and commit controls
+src/sensing.js                uncertainty signals from clicks, pointer and scrolling
 src/lessons/birthday-cake.js  cake lesson: steps, kinds, hints, how the agent does each
 src/lessons/party-menu.js     party-menu lesson
 src/shop.js, src/catalog.js   Basketly and its products

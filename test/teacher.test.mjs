@@ -39,7 +39,7 @@ test('the dial hands more kinds of steps to the agent, but never private or fina
 // ── Teacher (dial 2) ──
 
 test('Teacher opens with the framing and the first step', () => {
-  const t = createTeacher({ lesson: birthdayCake });
+  const t = createTeacher({ lesson: birthdayCake, pointing: 'now' });
   t.observe(base, 0);
   const turn = t.hear("My granddaughter's birthday is this weekend and I'd like to send a cake", 0);
   assert.equal(turn.phase, 'active');
@@ -50,7 +50,7 @@ test('Teacher opens with the framing and the first step', () => {
 });
 
 test('Teacher walks the whole task as the person acts, then closes reflectively', () => {
-  const t = createTeacher({ lesson: birthdayCake });
+  const t = createTeacher({ lesson: birthdayCake, pointing: 'now' });
   t.observe(base, 0);
   t.start(0);
   const path = [
@@ -109,7 +109,7 @@ test('friction escalates hints and brightness, but caps unprompted nudges', () =
 });
 
 test('moving to another page gets a one-time way back', () => {
-  const t = createTeacher({ lesson: birthdayCake });
+  const t = createTeacher({ lesson: birthdayCake, pointing: 'now' });
   t.observe(at(onCake), 0);
   t.start(0);
   const off = t.observe(at({ ...inStore, view: 'results', page: 'search', query: 'chocolate cake' }), 1);
@@ -126,7 +126,7 @@ test('at Autopilot the default tone is brief, like the paper\'s Autopilot', () =
 });
 
 test('tone changes wording, not guidance', () => {
-  const run = (tone) => { const t = createAgent({ lesson: birthdayCake, tone }); t.observe(base, 0); t.start(0); return t.observe(at(inStore), 1); };
+  const run = (tone) => { const t = createAgent({ lesson: birthdayCake, tone, pointing: 'now' }); t.observe(base, 0); t.start(0); return t.observe(at(inStore), 1); };
   const warm = run('warm'); const minimal = run('minimal');
   assert.equal(warm.highlight.target, minimal.highlight.target);
   assert.ok(warm.say.length > minimal.say.length);
@@ -299,4 +299,67 @@ test('dial 9 picks suggested dishes without asking', () => {
   a.observe(pwAt({ view: 'browse', plannerOpen: true, started: true, detailsOk: true, filters: { nutFree: true } }), 0);
   const t = a.start(0);
   assert.deepEqual(t.act, { stepId: 'add-main', value: 'roast-chicken' });
+});
+
+// ── Built-in wait time and uncertainty sensing ──
+
+test('Teacher gives wait time: speaks the step, points only after a few seconds', () => {
+  const t = createTeacher({ lesson: birthdayCake, familiarity: 0 });
+  t.observe(base, 0);
+  const first = t.start(0);
+  assert.match(first.say, /choose the store/);
+  assert.equal(first.highlight, null, 'not pointing yet');
+  assert.equal(t.tick(3000), null);
+  const shown = t.tick(4000);
+  assert.equal(shown.say, null, 'shown quietly');
+  assert.equal(shown.highlight.target, '[data-guide="store-summit"]');
+  assert.equal(shown.reveal, 'wait-time');
+});
+
+test('Teacher points sooner when the person seems unsure, then teaches', () => {
+  const t = createTeacher({ lesson: birthdayCake, familiarity: 0, tone: 'warm' });
+  t.observe(base, 0); t.start(0);
+  assert.equal(t.signal('empty-click', 500), null, 'one sign is not enough');
+  const shown = t.signal('empty-click', 800);
+  assert.match(shown.say, /show you where/);
+  assert.equal(shown.highlight.target, '[data-guide="store-summit"]');
+  assert.equal(shown.reveal, 'unsure:empty-click');
+  t.signal('wander', 1500); t.signal('empty-click', 1800);
+  const hint = t.signal('scroll-hunt', 2000);
+  assert.match(hint.say, /No rush/);
+  assert.ok(hint.highlight.level >= 1);
+});
+
+test('familiarity lengthens the wait; level 1 shortens it', () => {
+  const known = createAgent({ lesson: birthdayCake, autonomy: 2, familiarity: 2 }); known.observe(base, 0); known.start(0);
+  assert.equal(known.tick(6000), null);
+  assert.ok(known.tick(9000).highlight);
+  const extra = createAgent({ lesson: birthdayCake, autonomy: 1, familiarity: 0 }); extra.observe(base, 0); extra.start(0);
+  assert.ok(extra.tick(2000).highlight);
+});
+
+test('Helper stays quiet until the person seems unsure, then offers to do the step', () => {
+  const h = createAgent({ lesson: birthdayCake, autonomy: 5, tone: 'warm' });
+  h.observe(base, 0);
+  assert.equal(h.start(0).highlight, null);
+  assert.equal(h.tick(15000), null, 'no wait-time pointing at Helper');
+  const shown = h.signal('wander', 16000) || h.signal('wander', 16500);
+  assert.ok(shown && shown.highlight, 'points once unsure');
+  h.signal('empty-click', 17000); h.signal('empty-click', 17200);
+  const offer = h.signal('scroll-hunt', 17400);
+  assert.equal(offer.awaiting, 'rescue');
+  assert.match(offer.say, /do just this step/);
+  assert.equal(h.hear('yes please', 18000).act.stepId, 'choose-store');
+});
+
+test('asking "where is it" points right away, wait time or not', () => {
+  const t = createTeacher({ lesson: birthdayCake });
+  t.observe(base, 0); t.start(0);
+  assert.ok(t.hear('where is it?', 100).highlight);
+});
+
+test('Autopilot hand-back steps are pointed at right away', () => {
+  const a = createAgent({ lesson: birthdayCake, autonomy: 8 });
+  a.observe(at(checkout), 0);
+  assert.equal(a.start(0).highlight.target, '[data-guide="address"]');
 });

@@ -127,6 +127,11 @@ export function createVoice(tone = 'auto') {
       return level === 0 ? h : `${h} The highlight is now brighter.`;
     },
 
+    showWhere() {
+      if (t() === 'minimal') return '';
+      return warm() ? 'Here, let me show you where.' : 'It\'s highlighted on the screen now.';
+    },
+
     stuckCheck(step, { canTakeOver }) {
       const help = canTakeOver ? (t() === 'minimal' ? ' Say "help" and I\'ll do it.' : ' If you\'d like, say "help" and I\'ll do this step.') : '';
       if (t() === 'minimal') return `Still on this step: ${step.short || step.instruction}${help}`;
