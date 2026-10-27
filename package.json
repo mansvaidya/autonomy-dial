@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "A Teacher-persona voice agent that guides people through web tasks without acting for them.",
+  "description": "A voice agent with an autonomy dial (Teacher, Helper, Autopilot) and a familiarity dial, on two demo websites.",
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "start": "python3 -m http.server 4100"
+    "start": "python3 -m http.server 4100 --bind 127.0.0.1"
   }
 }

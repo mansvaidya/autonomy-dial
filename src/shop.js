@@ -71,6 +71,7 @@ export function createShop(root, { onChange = () => {} } = {}) {
       cartOpen: st.cartOpen, cartCount: cartCount(), cartHasMessage: st.cart.some((l) => !!l.message),
       cartHasCake: st.cart.some((l) => l.id === 'choc-mousse-cake'),
       deliveryDay: st.slot ? `${st.day} ${st.slot}` : null, addressFilled: st.addressFilled,
+      days: days().map((d) => d.id),
     };
   }
   const emit = () => onChange(snapshot());
@@ -387,7 +388,7 @@ export function createShop(root, { onChange = () => {} } = {}) {
             <div class="demo-pay">💳 No payment is needed: this is a demo shop. Never type real card details here.</div></section>
         </div>
         <aside class="co-side" data-guide="summary">
-          <button class="primary big" data-act="place" data-guide="place-order">Place order</button>
+          <div data-commit><button class="primary big" data-act="place" data-guide="place-order">Place order</button></div>
           ${st.placeError ? `<p class="field-error" role="alert">${esc(st.placeError)}</p>` : ''}
           <p class="fine">By placing your order, you agree to the demo's pretend terms. You'll review nothing real; nothing is charged.</p>
           <div class="co-items">${st.cart.map((l) => { const p = product(l.id); return `<div class="co-item"><div class="dr-img">${img(p)}</div><div><div>${esc(p.name)}${l.qty > 1 ? ` × ${l.qty}` : ''}</div><small class="muted">${esc([l.size, l.message ? `“${l.message}”` : null].filter(Boolean).join(' · '))}</small></div><div>${money(l.price * l.qty)}</div></div>`; }).join('')}</div>
@@ -568,6 +569,19 @@ export function createShop(root, { onChange = () => {} } = {}) {
     get state() { return snapshot(); },
     emit,
     reset() { st = fresh(); renderAll(); emit(); },
+    /** Put a shopping list (from Platewise) into the cart at Summit. Returns how many matched. */
+    importList(items) {
+      const s = store('summit');
+      let n = 0;
+      for (const it of items || []) {
+        const p = it.basketly && product(it.basketly);
+        if (!p) continue;
+        addLine(p, s); n++;
+      }
+      Object.assign(st, { page: 'store', storeId: 'summit', cartOpen: true });
+      renderAll();
+      return n;
+    },
   };
 }
 

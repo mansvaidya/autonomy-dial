@@ -80,3 +80,62 @@ button, input, select { font: inherit; color: inherit; }
 .agent .secondary { background: var(--surface); color: var(--ink); border: 2px solid var(--line); border-radius: 999px; padding: 10px 20px; font-weight: 600; cursor: pointer; }
 .agent .danger { background: var(--surface); border: 2px solid var(--danger); color: var(--danger); border-radius: 999px; padding: 10px 20px; font-weight: 600; cursor: pointer; }
 .agent .link { background: none; border: 0; color: var(--brand); cursor: pointer; padding: 4px 0; text-decoration: underline; }
+
+/* ── Sites and task picker ── */
+.site { position: absolute; inset: 0; }
+.picker { position: absolute; inset: 0; overflow: auto; padding: 40px 32px; background: var(--bg); }
+.picker h1 { margin: 0 0 6px; font-size: 1.9rem; }
+.picker .small { font-size: .85rem; }
+.picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 18px; margin: 22px 0; max-width: 900px; }
+.task-card { display: flex; flex-direction: column; gap: 6px; text-align: left; background: var(--surface); border: 2px solid var(--line); border-radius: 18px; padding: 0 0 18px; overflow: hidden; cursor: pointer; color: var(--ink); font: inherit; }
+.task-card:hover { border-color: var(--teacher); box-shadow: 0 6px 24px rgba(0,0,0,.08); }
+.task-card img { width: 100%; height: 170px; object-fit: cover; background: var(--line); }
+.task-card > span, .task-card > strong { padding: 0 18px; }
+.task-card strong { font-size: 1.25rem; }
+.task-site { font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-top: 10px; }
+.task-brief { color: var(--muted); font-size: .95rem; }
+
+/* ── Agent controlling the screen (paper Fig. 5: thick turquoise border) ── */
+#shop.agent-driving::after { content: ''; position: absolute; inset: 0; border: 6px solid #12b5b0; pointer-events: none; z-index: 40; }
+#shop.agent-driving::before { content: 'Agent is controlling the screen'; position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); z-index: 41; background: #12b5b0; color: #fff; font-weight: 800; font-size: .85rem; padding: 4px 14px; border-radius: 999px; pointer-events: none; }
+.hands-ring { position: fixed; z-index: 52; pointer-events: none; border: 4px solid #12b5b0; border-radius: 12px; box-shadow: 0 0 0 6px rgba(18, 181, 176, .25); transition: top .2s, left .2s, width .2s, height .2s; }
+.guide-box[data-level="agent"] { border-color: #12b5b0; background: rgba(18, 181, 176, .10); }
+@media (prefers-reduced-motion: reduce) { .hands-ring { transition: none; } }
+
+/* ── Dials ── */
+.agent { --b-teacher: #2e8b57; --b-helper: #7b4bb3; --b-autopilot: #3a6fd8; }
+.agent[data-band="helper"] .agent-icon, .agent-icon[data-band="helper"] { color: var(--b-helper); }
+.agent-icon[data-band="autopilot"] { color: var(--b-autopilot); }
+.agent-icon[data-band="teacher"] { color: var(--b-teacher); }
+.agent[data-band="helper"] .live { background: var(--b-helper); }
+.agent[data-band="autopilot"] .live { background: var(--b-autopilot); }
+.agent[data-band="helper"] .msg.agent .bubble { border-color: var(--b-helper); }
+.agent[data-band="autopilot"] .msg.agent .bubble { border-color: var(--b-autopilot); }
+.dials { padding: 10px 16px 6px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
+.dial-label { font-weight: 700; font-size: .85rem; margin-bottom: 5px; }
+.stops { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; background: var(--bg); border-radius: 12px; padding: 4px; }
+.stop { border: 0; background: none; border-radius: 9px; padding: 8px 4px; font: inherit; font-size: .85rem; font-weight: 700; color: var(--muted); cursor: pointer; min-height: 38px; }
+.stop.on { background: var(--surface); color: var(--ink); box-shadow: 0 1px 4px rgba(0,0,0,.15); }
+.stops:not(.fam) .stop.on[data-band="teacher"] { color: var(--b-teacher); }
+.stops:not(.fam) .stop.on[data-band="helper"] { color: var(--b-helper); }
+.stops:not(.fam) .stop.on[data-band="autopilot"] { color: var(--b-autopilot); }
+.fine { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: .8rem; color: var(--muted); }
+.fine input { flex: 1; accent-color: var(--teacher); }
+.agent[data-band="helper"] .fine input { accent-color: var(--b-helper); }
+.agent[data-band="autopilot"] .fine input { accent-color: var(--b-autopilot); }
+.auto-num { font-weight: 800; color: var(--ink); min-width: 1ch; }
+.dial-help { margin: 4px 0 0; font-size: .82rem; color: var(--muted); line-height: 1.35; }
+.empty-state .brief { background: var(--surface); border-left: 4px solid var(--teacher); padding: 8px 10px; border-radius: 6px; }
+
+/* ── Settings sheet (opened from the gear in the panel header) ── */
+.agent { position: relative; }
+.gear { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; border: 0; background: none; color: var(--muted); cursor: pointer; margin-left: 2px; }
+.gear:hover, .gear[aria-expanded="true"] { background: var(--bg); color: var(--ink); }
+.settings-sheet { position: absolute; z-index: 10; top: 69px; left: 0; right: 0; bottom: 0; overflow: auto; background: var(--surface); border-top: 1px solid var(--line); box-shadow: 0 12px 30px rgba(0,0,0,.12); }
+.settings-sheet[hidden] { display: none; }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px 4px; }
+.sheet-head h2 { margin: 0; font-size: 1.1rem; }
+.sheet-close { width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--bg); color: var(--ink); cursor: pointer; font-size: 1rem; }
+.settings-sheet .dials { border-bottom: 1px solid var(--line); padding-bottom: 14px; gap: 16px; }
+.settings-sheet .settings { margin: 0; border: 0; border-radius: 0; padding: 14px 16px 20px; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.settings-sheet .settings label { width: 100%; }

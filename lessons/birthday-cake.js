@@ -26,9 +26,15 @@ const pastCart = (s) => s.view === 'checkout' || s.view === 'confirmation';
 export const birthdayCake = {
   id: 'birthday-cake',
   title: 'How to order a birthday cake online',
+  goal: 'order a birthday cake',
+  site: 'basketly',
+  brief: 'Your granddaughter\'s birthday is this weekend. Send her a chocolate birthday cake with a message, from Summit Warehouse Club.',
   steps: [
     {
       id: 'choose-store',
+      kind: 'find',
+      narrate: 'Opening Summit Warehouse Club.',
+      perform: (h) => h.click('[data-guide="store-summit"] button'),
       view: 'home',
       target: '[data-guide="store-summit"]',
       instruction: 'First, choose the store. On this page you\'ll see a list of stores under "Stores near you". Find Summit Warehouse Club, with the dark blue circle, and click it.',
@@ -45,6 +51,9 @@ export const birthdayCake = {
     },
     {
       id: 'search',
+      kind: 'find',
+      narrate: 'Searching Summit for "chocolate cake".',
+      perform: (h) => h.type('#bk-q', 'chocolate cake', { submit: true }),
       view: null,
       target: '[data-guide="search"]',
       instruction: 'You\'re in Summit\'s store now. Next, find the search bar at the top of the page, the long box that says "Search Summit Warehouse Club". Click in it, type "chocolate cake", and press Enter.',
@@ -59,6 +68,9 @@ export const birthdayCake = {
     },
     {
       id: 'open-product',
+      kind: 'find',
+      narrate: 'Opening the Chocolate Mousse Cake.',
+      perform: (h) => h.click(`.pgrid [data-guide="product-${CAKE}"] .pcard-hit, [data-guide="product-${CAKE}"] .pcard-hit`),
       view: null,
       target: `[data-guide="product-${CAKE}"]`,
       instruction: 'Here are the results. Find the Chocolate Mousse Cake, the dark chocolate cake, and click its picture or its name to open it.',
@@ -72,6 +84,14 @@ export const birthdayCake = {
     },
     {
       id: 'size',
+      kind: 'choose',
+      prefill: true,
+      ask: 'It comes in 7 inch, which serves 6 to 8 for $14.99, or 10 inch, which serves 12 to 16 for $22.99. Which size would you like?',
+      askShort: 'which size, 7 inch or 10 inch?',
+      options: () => ['7 inch', '10 inch'],
+      parse: (u) => (/\b(10|ten)\b|\bbig(ger)?\b|\blarge\b/i.test(u) ? '10 inch' : /\b(7|seven)\b|\bsmall(er)?\b/i.test(u) ? '7 inch' : null),
+      narrate: (v) => `Choosing the ${v} size.`,
+      perform: (h, v) => h.click(`.opt-pill[data-size="${v}"]`),
       view: 'product',
       target: '[data-guide="size"]',
       instruction: 'The cake\'s page has opened on top of the store. Now choose a size. Under "Choose a size", pick 7 inch or 10 inch. The price changes with the size.',
@@ -88,6 +108,18 @@ export const birthdayCake = {
     },
     {
       id: 'message',
+      kind: 'choose',
+      prefill: true,
+      ask: 'What would you like written on the cake? You can also say "no message".',
+      askShort: 'what should the message say?',
+      parse: (u, s, opts = {}) => {
+        if (opts.upfront) { const m = String(u).match(/(?:saying|that says|message|write)\s*:?\s*["“']([^"”']{1,40})["”']/i); return m ? m[1].trim() : null; }
+        if (/^\s*(no( message)?|none|nothing|skip( it)?|leave it blank)\s*[.!]?\s*$/i.test(u)) return '';
+        const t = String(u).replace(/^\s*(it should say|have it say|please write|write|say|put|the message is|make it say|message)\s*:?\s*/i, '').replace(/^["“']|["”'.]$/g, '').trim();
+        return t ? t.slice(0, 40) : null;
+      },
+      narrate: (v) => (v ? `Typing "${v}" as the message.` : 'Leaving the message blank.'),
+      perform: (h, v) => (v ? h.type('#bk-msg', v) : 'skip'),
       view: 'product',
       target: '[data-guide="message"]',
       instruction: 'Next, the message for the cake. Click in the box labelled "Message on the cake" and type what you\'d like written, for example "Happy Birthday, Maya".',
@@ -105,6 +137,9 @@ export const birthdayCake = {
     },
     {
       id: 'add-to-cart',
+      kind: 'do',
+      narrate: 'Adding the cake to your cart.',
+      perform: (h) => h.click('.modal [data-guide="add-to-cart"]'),
       view: 'product',
       target: '[data-guide="add-to-cart"]',
       instruction: 'Now click the purple "Add to cart" button, below the message box.',
@@ -121,6 +156,9 @@ export const birthdayCake = {
     },
     {
       id: 'open-cart',
+      kind: 'do',
+      narrate: 'Opening your cart.',
+      perform: (h) => h.click('[data-guide="view-cart"], [data-guide="cart"]'),
       view: null,
       target: '[data-guide="view-cart"], [data-guide="cart"]',
       instruction: 'The cake is in your cart. Now open the cart: click the "View cart" button, or the cart button at the top right of the page.',
@@ -134,6 +172,9 @@ export const birthdayCake = {
     },
     {
       id: 'checkout',
+      kind: 'do',
+      narrate: 'Going to checkout.',
+      perform: (h) => h.click('[data-guide="checkout"]'),
       view: 'cart',
       target: '[data-guide="checkout"]',
       instruction: 'Your cart has opened on the right. Check that it shows the cake with the right size and message, then click "Go to checkout" at the bottom.',
@@ -149,6 +190,7 @@ export const birthdayCake = {
     },
     {
       id: 'address',
+      kind: 'private',
       view: 'checkout',
       target: '[data-guide="address"]',
       instruction: 'This is the checkout page. First, type the delivery address under "Delivery address": the street, the city and the ZIP code. If it\'s for a friend, use their address.',
@@ -166,6 +208,22 @@ export const birthdayCake = {
     },
     {
       id: 'delivery-time',
+      kind: 'choose',
+      prefill: true,
+      ask: (s) => `When should it arrive? You can pick ${(s.days || ['Today', 'Tomorrow']).join(', ').replace(/, ([^,]*)$/, ' or $1')}, in the morning, at midday, in the afternoon or in the evening. For example, "tomorrow afternoon".`,
+      askShort: 'which day and time?',
+      options: (s) => [...(s.days || []).slice(0, 2).map((d) => `${d} morning`), 'afternoon'],
+      parse: (u, s = {}, opts = {}) => {
+        const days = s.days || ['Today', 'Tomorrow'];
+        const lc = String(u).toLowerCase();
+        const day = days.find((d) => lc.includes(d.toLowerCase()));
+        const slot = /early morning|first thing/.test(lc) ? '9am–11am' : /morning/.test(lc) ? '9am–11am' : /\bnoon\b|lunch|midday/.test(lc) ? '11am–1pm' : /late afternoon/.test(lc) ? '3pm–5pm' : /afternoon/.test(lc) ? '1pm–3pm' : /evening|night/.test(lc) ? '5pm–7pm' : null;
+        if (opts.upfront) return day && slot ? { day, slot } : null;
+        if (!day && !slot) return null;
+        return { day: day || days[1] || days[0], slot: slot || '1pm–3pm' };
+      },
+      narrate: (v) => `Choosing ${v.day}, ${v.slot.replace('–', ' to ')}.`,
+      perform: async (h, v) => (await h.click(`.day[data-day="${v.day}"]`)) && h.click(`.slot[data-slot="${v.slot}"]`),
       view: 'checkout',
       target: '[data-guide="delivery-day"]',
       instruction: 'Now choose when the cake should arrive. In section 2, "Delivery time", click a day, then click a time window under it.',
@@ -182,6 +240,7 @@ export const birthdayCake = {
     },
     {
       id: 'place-order',
+      kind: 'commit',
       view: 'checkout',
       target: '[data-guide="summary"]',
       instruction: 'Last step, and an important one. On the right is the order summary. Read it over: the cake, the size, the message, the delivery time and the total. When it all looks right, click "Place order" at the top of the summary.',

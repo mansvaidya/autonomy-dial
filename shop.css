@@ -53,7 +53,7 @@
 .bk-main { padding: 20px 24px 48px; outline: none; max-width: 1400px; margin: 0 auto; }
 
 /* Home */
-.hero-band { display: grid; grid-template-columns: 1.6fr 1fr; gap: 16px; margin-bottom: 18px; }
+.hero-band { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 16px; margin-bottom: 18px; }
 .hero-band > div:first-child { background: linear-gradient(120deg, var(--bk-deep), var(--bk)); color: #fff; border-radius: 18px; padding: 28px 30px; }
 .hero-band h1 { margin: 0 0 8px; font-size: 1.9em; line-height: 1.15; }
 .hero-band p { margin: 0; opacity: .9; }
@@ -74,7 +74,8 @@
 .sc-fee { font-size: .82em; color: var(--bk-muted); }
 
 /* Store */
-.store-layout { display: grid; grid-template-columns: 250px 1fr; gap: 24px; align-items: start; }
+.store-layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 24px; align-items: start; }
+.store-content { min-width: 0; }
 .store-side { position: sticky; top: 92px; background: var(--bk-card); border: 1px solid var(--bk-line); border-radius: 16px; padding: 16px; max-height: calc(100vh - 120px); overflow: auto; }
 .ss-head { text-align: center; padding-bottom: 12px; border-bottom: 1px solid var(--bk-line); }
 .ss-head .slogo { margin: 0 auto 8px; }
@@ -197,7 +198,7 @@
 .checkout-btn .pill { background: rgba(255,255,255,.2); border-radius: 999px; padding: 8px 14px; }
 
 /* Checkout */
-.co-layout { display: grid; grid-template-columns: 1.4fr 1fr; gap: 28px; align-items: start; max-width: 1100px; margin: 0 auto; }
+.co-layout { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 28px; align-items: start; max-width: 1100px; margin: 0 auto; }
 .co-main h1 { margin: 0 0 14px; }
 .co-sec { background: var(--bk-card); border: 1px solid var(--bk-line); border-radius: 16px; padding: 18px 20px; margin-bottom: 14px; }
 .co-sec h2 { margin: 0 0 14px; font-size: 1.15em; display: flex; align-items: center; gap: 10px; }
@@ -237,7 +238,7 @@
 
 /* Narrow screens */
 @media (max-width: 1150px) { .addr, .seg { display: none; } }
-@media (max-width: 860px) {
+@media (max-width: 980px) {
   .store-layout { grid-template-columns: 1fr; }
   .store-side { display: none; }
   .aisle-chips { display: flex; }
