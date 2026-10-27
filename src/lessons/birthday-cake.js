@@ -1,177 +1,195 @@
 // The birthday-cake lesson: the worked example from the paper's persona
-// demonstrations (order, customize and send a cake), on the mock shop.
+// demonstrations (order, customize and send a cake), on the Basketly demo
+// marketplace, from the Summit Warehouse Club.
 //
 // A step is:
 //   id           stable id (for logs)
-//   view         the shop page the step happens on (null = any page)
+//   view         the shop view the step happens on (null = any)
 //   target       CSS selector the Teacher highlights; the person acts on it
 //   instruction  what to do, in full
 //   short        a shorter reminder, for someone who has done this before
 //   why          the reason behind the step (transferable knowledge)
 //   hints        increasingly specific help when the person is stuck
-//   getBack      what to say if the person has moved to a different page
+//   getBack      what to say if the person has moved somewhere else
 //   getBackTarget  what to highlight in that case
 //   sensitive    the person types private data themselves; the Teacher never reads it
-//   learned      a phrase for the closing recap ("You searched for …")
-//   doneWhen     (shopState) => boolean; the goal of the step
+//   learned      a phrase for the closing recap ("You chose the store, …")
+//   doneWhen     (shopState) => boolean; the goal of the step. It also accepts
+//                later evidence (the cake is already in the cart), so a person
+//                who goes ahead of the Teacher is never pulled back.
+//   learnedWhen  (optional) stricter check for the recap
 
-const ON_OR_AFTER_CART = ['cart', 'checkout', 'confirmation'];
+const CAKE = 'choc-mousse-cake';
+const inCart = (s) => !!s.cartHasCake;
+const pastCart = (s) => s.view === 'checkout' || s.view === 'confirmation';
 
 export const birthdayCake = {
   id: 'birthday-cake',
   title: 'How to order a birthday cake online',
   steps: [
     {
+      id: 'choose-store',
+      view: 'home',
+      target: '[data-guide="store-summit"]',
+      instruction: 'First, choose the store. On this page you\'ll see a list of stores under "Stores near you". Find Summit Warehouse Club, with the dark blue circle, and click it.',
+      short: 'Click Summit Warehouse Club in the list of stores.',
+      why: 'Delivery apps like this one carry many stores. Each has its own prices and delivery times, so you choose the store before you choose the items.',
+      hints: [
+        'The store list is just below the purple banner and the row of round buttons. Summit Warehouse Club is the first store, with a dark blue circle and a letter S.',
+        'Look for the words "Summit Warehouse Club" in the first box under "Stores near you", and click anywhere on that box.',
+      ],
+      getBack: 'To choose Summit, go back to the list of stores: click the word basketly at the top left of the page.',
+      getBackTarget: '[data-guide="logo"]',
+      learned: 'chose the store',
+      doneWhen: (s) => (s.storeId === 'summit' && s.view !== 'home') || inCart(s) || pastCart(s),
+    },
+    {
       id: 'search',
       view: null,
       target: '[data-guide="search"]',
-      instruction: 'First, find the search box at the top of the page. Click inside it, type "chocolate cake", and press Enter.',
-      short: 'Search for "chocolate cake" in the box at the top.',
-      why: 'Searching is usually faster than browsing the aisles, and the search box is in the same place on almost every shopping site.',
+      instruction: 'You\'re in Summit\'s store now. Next, find the search bar at the top of the page, the long box that says "Search Summit Warehouse Club". Click in it, type "chocolate cake", and press Enter.',
+      short: 'Search for "chocolate cake" in the bar at the top.',
+      why: 'A big store has hundreds of items. Searching takes you straight to what you want, and the search bar is in the same spot on almost every shopping site.',
       hints: [
-        'The search box is the long white bar at the very top, next to the magnifying glass. It says "Search Corner Market".',
-        'Click once inside that long bar at the top so the cursor blinks, then type the words chocolate cake and press the Enter key.',
+        'The search bar is the long, rounded box at the very top, between the word basketly and the cart button.',
+        'Click once inside that long box at the top so the cursor blinks, then type the words chocolate cake and press the Enter key.',
       ],
       learned: 'searched for what you wanted',
-      doneWhen: (s) => /cake/i.test(s.query || '') && s.view !== 'home',
+      doneWhen: (s) => (/cake/i.test(s.query || '') && s.view === 'results') || s.productId === CAKE || inCart(s) || pastCart(s),
     },
     {
       id: 'open-product',
-      view: 'results',
-      target: '[data-guide="product-chocolate-cake"]',
-      instruction: 'Here are the results. Find the chocolate cake and click on its picture or its name to open its page.',
-      short: 'Open the chocolate cake.',
-      why: 'The results only show a summary. The product page is where you choose options like size.',
+      view: null,
+      target: `[data-guide="product-${CAKE}"]`,
+      instruction: 'Here are the results. Find the Chocolate Mousse Cake, the dark chocolate cake, and click its picture or its name to open it.',
+      short: 'Open the Chocolate Mousse Cake.',
+      why: 'The results only show a summary. Opening an item shows its details and its choices, like size.',
       hints: [
-        'It\'s the first card, with the brown cake picture and the words "Chocolate Celebration Cake".',
-        'Click directly on the words "Chocolate Celebration Cake" in the first card.',
+        'It\'s the first item in the results, with a picture of a round dark chocolate cake and a price of $14.99.',
+        'Click right on the cake picture. Don\'t click the small "Add" button on the corner; click the picture itself.',
       ],
-      getBack: 'To get back to the cakes, search for "chocolate cake" again in the box at the top.',
-      getBackTarget: '[data-guide="search"]',
-      doneWhen: (s) => (s.view === 'product' && s.productId === 'chocolate-cake') || s.cartCount > 0,
+      doneWhen: (s) => s.productId === CAKE || inCart(s) || pastCart(s),
     },
     {
       id: 'size',
       view: 'product',
       target: '[data-guide="size"]',
-      instruction: 'Now choose a size. Scroll down a little, past the description, to where it says "Choose a size", and pick 7 inch or 10 inch.',
+      instruction: 'The cake\'s page has opened on top of the store. Now choose a size. Under "Choose a size", pick 7 inch or 10 inch. The price changes with the size.',
       short: 'Pick a size under "Choose a size".',
-      why: 'Shops often put choices like size below the description, so it\'s worth scrolling down on a product page before adding anything to the cart.',
+      why: 'Many items have choices that change the price, and the shop needs a choice before it can add the item. It\'s worth checking these before adding anything.',
       hints: [
-        'Scroll down below the price and the description. You\'ll see two buttons that say 7 inch and 10 inch.',
-        'Use your mouse wheel or the scroll bar to move the page down. The size buttons are just above the message box. Click the one you want; it turns green when it\'s chosen.',
+        'The size choices are two boxes on the right, under the price, labelled 7 inch and 10 inch.',
+        'Click the box that says 10 inch, or 7 inch for a smaller cake. It turns purple when it\'s chosen. You may need to scroll down a little inside the cake\'s window.',
       ],
-      getBack: 'To choose the size, go back to the cake\'s page. Search for "chocolate cake" and open it again.',
-      getBackTarget: '[data-guide="search"]',
+      getBack: 'The cake\'s window has closed. To choose a size, open the cake again by clicking its picture.',
+      getBackTarget: `[data-guide="product-${CAKE}"]`,
       learned: 'chose the size',
-      doneWhen: (s) => !!s.size || s.cartCount > 0,
+      doneWhen: (s) => !!(s.productId === CAKE && s.size) || inCart(s) || pastCart(s),
     },
     {
       id: 'message',
       view: 'product',
       target: '[data-guide="message"]',
-      instruction: 'Next, the message for the cake. Click in the box labelled "Message on the cake" and type what you\'d like written, for example "Happy Birthday".',
+      instruction: 'Next, the message for the cake. Click in the box labelled "Message on the cake" and type what you\'d like written, for example "Happy Birthday, Maya".',
       short: 'Type your message in "Message on the cake".',
-      why: 'Bakeries write exactly what you type, so it\'s worth checking the spelling before you move on.',
+      why: 'The bakery writes exactly what you type, so it\'s worth checking the spelling before you move on.',
       hints: [
-        'The message box is right under the size buttons.',
+        'The message box is just below the size choices.',
         'Click inside the empty box under "Message on the cake" so the cursor blinks, then type your message. Say "done" when you have.',
       ],
-      getBack: 'To add a message, go back to the cake\'s page.',
-      getBackTarget: '[data-guide="search"]',
+      getBack: 'To add a message, open the cake again by clicking its picture.',
+      getBackTarget: `[data-guide="product-${CAKE}"]`,
       learned: 'added a message',
-      // The message is optional: once the cake is in the cart, move on. Only
-      // claim it in the recap if a message was actually written.
-      doneWhen: (s) => !!s.messageFilled || s.cartCount > 0,
+      doneWhen: (s) => !!(s.productId === CAKE && s.messageFilled) || inCart(s) || pastCart(s),
       learnedWhen: (s) => !!s.messageFilled || !!s.cartHasMessage,
     },
     {
       id: 'add-to-cart',
       view: 'product',
       target: '[data-guide="add-to-cart"]',
-      instruction: 'Now click the green "Add to cart" button.',
+      instruction: 'Now click the purple "Add to cart" button, below the message box.',
       short: 'Click "Add to cart".',
       why: 'Adding to the cart doesn\'t buy anything yet. It\'s like putting it in a basket; you can still change your mind.',
       hints: [
-        'The "Add to cart" button is the big green button below the message box.',
-        'Scroll down a little more if you need to. The green button says "Add to cart". Click it once.',
+        'The "Add to cart" button is the long purple button below the message box, next to "Qty".',
+        'Scroll down a little inside the cake\'s window if you need to, then click the purple button that says "Add to cart".',
       ],
-      getBack: 'The cake isn\'t in your cart yet. Go back to the cake\'s page to add it.',
-      getBackTarget: '[data-guide="search"]',
+      getBack: 'The cake isn\'t in your cart yet. Open the cake again by clicking its picture.',
+      getBackTarget: `[data-guide="product-${CAKE}"]`,
       learned: 'put it in your cart',
-      doneWhen: (s) => s.cartCount > 0,
+      doneWhen: (s) => inCart(s) || pastCart(s),
     },
     {
       id: 'open-cart',
       view: null,
-      target: '[data-guide="cart"]',
-      instruction: 'The cake is in your cart. Now open the cart by clicking the cart button at the top right of the page.',
-      short: 'Open the cart, top right.',
-      why: 'The cart is where you review everything before paying. It\'s almost always in the top right corner.',
+      target: '[data-guide="view-cart"], [data-guide="cart"]',
+      instruction: 'The cake is in your cart. Now open the cart: click the "View cart" button, or the cart button at the top right of the page.',
+      short: 'Open the cart.',
+      why: 'The cart is where you check everything before paying. It\'s almost always in the top right corner.',
       hints: [
-        'Look at the top right corner. There\'s a button with a basket and the word "Cart" and a number 1.',
-        'Click the "Cart" button in the top right corner, next to the search box.',
+        'In the cake\'s window there\'s now a purple "View cart" button. At the top right of the page, the cart button shows a number 1.',
+        'Click the purple button that says "View cart".',
       ],
-      doneWhen: (s) => ON_OR_AFTER_CART.includes(s.view),
+      doneWhen: (s) => s.view === 'cart' || pastCart(s),
     },
     {
       id: 'checkout',
       view: 'cart',
       target: '[data-guide="checkout"]',
-      instruction: 'Here\'s your cart. Check that it shows the cake with the right size and message, then click "Go to checkout".',
+      instruction: 'Your cart has opened on the right. Check that it shows the cake with the right size and message, then click "Go to checkout" at the bottom.',
       short: 'Check the cart, then "Go to checkout".',
       why: 'Checking the cart now is easier than fixing a mistake after the order is placed.',
       hints: [
-        'The "Go to checkout" button is on the right, under the total.',
-        'Click the green "Go to checkout" button under the price total.',
+        'The "Go to checkout" button is the purple button at the bottom of the cart, with the price on it.',
+        'Click the long purple button at the bottom of the cart panel that says "Go to checkout".',
       ],
-      getBack: 'Open the cart again with the cart button at the top right.',
+      getBack: 'The cart has closed. Open it again with the cart button at the top right.',
       getBackTarget: '[data-guide="cart"]',
-      doneWhen: (s) => s.view === 'checkout' || s.view === 'confirmation',
-    },
-    {
-      id: 'delivery-day',
-      view: 'checkout',
-      target: '[data-guide="delivery-day"]',
-      instruction: 'Choose when the cake should arrive. Under "Delivery day", pick the day you want, for example Saturday morning.',
-      short: 'Pick a delivery day.',
-      why: 'Cakes are perishable, so choosing a delivery window close to the party means it arrives fresh.',
-      hints: [
-        'The delivery choices are the first section on the checkout page, with the days of the week.',
-        'Click one of the day buttons under "Delivery day". The one you choose turns green.',
-      ],
-      getBack: 'Go back to checkout: open the cart at the top right, then click "Go to checkout".',
-      getBackTarget: '[data-guide="cart"]',
-      learned: 'picked a delivery day',
-      doneWhen: (s) => !!s.deliveryDay || s.view === 'confirmation',
+      doneWhen: (s) => pastCart(s),
     },
     {
       id: 'address',
       view: 'checkout',
       target: '[data-guide="address"]',
-      instruction: 'Next, type the delivery address in the three boxes: street, town, and ZIP code.',
+      instruction: 'This is the checkout page. First, type the delivery address under "Delivery address": the street, the city and the ZIP code. If it\'s for a friend, use their address.',
       short: 'Type the delivery address.',
-      why: 'The address is typed exactly as you enter it on the label, so it\'s worth a quick re-read.',
+      why: 'The address is printed on the label exactly as you type it, so it\'s worth a quick re-read.',
       hints: [
-        'The address boxes are under "Deliver to", below the delivery days.',
-        'Click in the box that says "Street address" and type it, then do the same for "Town or city" and "ZIP code".',
+        'The address boxes are in the first section, numbered 1, at the top of the page.',
+        'Click in the box that says "Street address" and type it, then do the same for "City" and "ZIP code". The apartment and state boxes are optional.',
       ],
-      getBack: 'Go back to checkout to finish the address.',
+      getBack: 'To finish the address, go back to checkout: open the cart at the top right, then click "Go to checkout".',
       getBackTarget: '[data-guide="cart"]',
       sensitive: true,
       learned: 'entered the address',
       doneWhen: (s) => !!s.addressFilled || s.view === 'confirmation',
     },
     {
+      id: 'delivery-time',
+      view: 'checkout',
+      target: '[data-guide="delivery-day"]',
+      instruction: 'Now choose when the cake should arrive. In section 2, "Delivery time", click a day, then click a time window under it.',
+      short: 'Pick a delivery day and time.',
+      why: 'Cakes are perishable, so choosing a time close to the party means it arrives fresh. Each time shows its own delivery fee.',
+      hints: [
+        'Section 2 is below the address. First click a day, like Tomorrow; the times appear underneath.',
+        'Click one of the four day boxes, then one of the time boxes that appear below it. Your choices turn purple.',
+      ],
+      getBack: 'Go back to checkout to choose the time.',
+      getBackTarget: '[data-guide="cart"]',
+      learned: 'picked a delivery time',
+      doneWhen: (s) => !!s.deliveryDay || s.view === 'confirmation',
+    },
+    {
       id: 'place-order',
       view: 'checkout',
       target: '[data-guide="summary"]',
-      instruction: 'Last step, and an important one. Read over the order summary: the cake, the size, the message, the day and the total. When it all looks right, click "Place order".',
+      instruction: 'Last step, and an important one. On the right is the order summary. Read it over: the cake, the size, the message, the delivery time and the total. When it all looks right, click "Place order" at the top of the summary.',
       short: 'Review the summary, then "Place order".',
       why: 'This is the decision point. Everything before it can be changed freely, but once you place the order, changing it is harder. That\'s why it\'s always yours to click.',
       hints: [
-        'The summary is the box on the right with the total. The "Place order" button is at its bottom.',
-        'Check each line in the box on the right, then click the green "Place order" button under it.',
+        'The summary is the box on the right side of the page. The purple "Place order" button is at its top.',
+        'Check each line in the box on the right, then click the purple "Place order" button.',
       ],
       getBack: 'Your order isn\'t placed yet. Go back to checkout to review and place it.',
       getBackTarget: '[data-guide="cart"]',
@@ -179,7 +197,6 @@ export const birthdayCake = {
       doneWhen: (s) => s.view === 'confirmation',
     },
   ],
-  // Used when the person asks what they're learning, and to match a request.
   matches: /\b(cake|birthday|bake|bakery|order)\b/i,
 };
 

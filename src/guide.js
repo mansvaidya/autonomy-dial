@@ -31,7 +31,7 @@ export function createGuide(doc = document) {
   function place() {
     raf = 0;
     if (!spec) { box.hidden = true; edge.hidden = true; return { found: false, visible: false }; }
-    const el = doc.querySelector(spec.target);
+    const el = pickTarget(spec.target);
     if (!el) { box.hidden = true; edge.hidden = true; return { found: false, visible: false }; }
     const r = el.getBoundingClientRect();
     // Visible area = the nearest scrolling pane (the shop), not the window, so
@@ -56,6 +56,22 @@ export function createGuide(doc = document) {
       edge.style.top = direction === 'down' ? `${v.bottom - 56}px` : `${v.top + 16}px`;
     }
     return { found: true, visible: !direction, direction };
+  }
+
+  // A target may match several elements (a selector list, or the same control
+  // in two places). Point at the one the person can actually reach: the first
+  // that isn't covered by a popup, else the last match (popups render last).
+  function pickTarget(sel) {
+    const all = [...doc.querySelectorAll(sel)].filter((e) => e.getClientRects().length);
+    if (all.length <= 1) return all[0] || null;
+    const reachable = all.find((e) => {
+      const r = e.getBoundingClientRect();
+      const x = r.left + r.width / 2, y = r.top + Math.min(r.height / 2, 20);
+      if (x < 0 || y < 0 || x > win.innerWidth || y > win.innerHeight) return false;
+      const hit = doc.elementFromPoint(x, y);
+      return !!hit && (e === hit || e.contains(hit) || hit.closest('.guide-box'));
+    });
+    return reachable || all[all.length - 1];
   }
 
   function scrollParent(el) {
